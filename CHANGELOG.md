@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+- `internal/icewire` — NAT-traversal data path (HANDOFF item 16), first increment.
+  Adopts pion/ice for hole-punching and quic-go for a reliable, ordered stream
+  over the punched UDP path (ICE alone yields datagrams; the chunk protocol needs
+  a stream). QUIC reuses the *same* passphrase-derived pinned-mutual-TLS identity
+  as the LAN transport (`transport.Identity`'s configs + a `gusset-chunk/1` ALPN),
+  and a stream is just the `io.ReadWriteCloser` `transport.NewClient`/`Serve`
+  already consume — so the chunk and reconcile layers are unchanged. `Gather`
+  produces a small JSON `Endpoint` (ICE creds + candidates) to carry sealed inside
+  a rendezvous beacon; `Connect` punches and brings up QUIC; `Conn.OpenStream`/
+  `AcceptStream` drive pull/serve. Verified end-to-end over pion's virtual network
+  (vnet) — two peers behind simulated port-restricted-cone NATs punch and run a
+  real chunk `Get`, in-process, no hardware (the approach was de-risked first in
+  spikes/icepunch). Still to wire: ICE fields in the beacon + the `sync.go`
+  fallback when LAN/reflexive dials fail (increment 2).
 - Scaffolded the Go module with the house tooling: git-tag-derived versioning
   (`buildVersion()` fallback chain + `Makefile`), golangci-lint v2, CI (vet,
   gofmt check, `go test -race`, build) and goreleaser release plumbing.
