@@ -116,13 +116,45 @@ authentication and channel encryption with stdlib crypto. Encrypted chunks
 hole-punching, no relay.** This is the lightest thing that works for the
 same-WiFi case, and it always works there.
 
-**Tier 1 — cross-network NAT traversal (later).** When the peers are on
-different networks, add `pion` (`pion/ice` + `pion/stun`, pure-Go) to gather
-server-reflexive candidates via public STUN (`stun.l.google.com:19302` — free,
-stateless, data-blind, no account) and hole-punch. Firefox Sync remains the
-signaling channel; we cache a peer's last-known direct endpoint to skip the
-minutes-slow first rendezvous. Best-effort: symmetric-NAT-both-ends pairs still
-won't connect, and that is shown as status, not hidden.
+**Tier 1 — cross-network NAT traversal (in progress).** When the peers are on
+different networks, each device gathers its server-reflexive candidate via public
+STUN (`stun.l.google.com:19302` — free, stateless, data-blind, no account),
+publishes it (plus its LAN candidates) in a **sealed beacon** over a signaling
+channel, reads its peers' beacons, and connects. Firefox Sync is the signaling
+carrier; we cache a peer's last-known direct endpoint to skip the minutes-slow
+first rendezvous. Best-effort: symmetric-NAT-both-ends pairs still won't connect,
+and that is shown as status, not hidden.
+
+Tier 1 decomposes into four pieces; the foundation is built, the two hard
+externally-dependent pieces are the next steps:
+
+- **Reflexive discovery — `internal/stunc` (done).** A minimal RFC 8489 Binding
+  client: open a UDP socket, ask a public STUN server "what is my public
+  IP:port?", get back the XOR-MAPPED-ADDRESS. Hand-rolled (~100 lines, no
+  dependency) rather than pulling the full `pion` tree, because reflexive
+  discovery is all that is needed until hole-punching exists. The caller owns the
+  socket so the same local port can later carry data.
+- **Signaling contract + beacons — `internal/rendezvous` (done).** A `Beacon`
+  (DeviceID, Instance, LAN endpoints, reflexive candidate, issued-at) is
+  AEAD-**sealed** with the passphrase-derived key before publication — the carrier
+  sees only ciphertext, and `Open` succeeding *is* the authentication (a beacon
+  that opens came from a passphrase-holder; domain-separated by AAD from chunk
+  ciphertext). A `Signaling` interface abstracts the carrier; `DirSignaling` (a
+  shared directory) is the test/manual-rendezvous impl, mirroring how the
+  transport ran over loopback before mDNS.
+- **Companion extension + storage.sync carrier (next).** The production
+  `Signaling`: the companion extension writes each device's sealed beacon to its
+  own `storage.sync` key (carried E2E-encrypted by Firefox Sync) and reads peers'.
+  Browser-side; needs a live Sync round-trip to validate. Stays a *good Sync
+  citizen* — a beacon is a few hundred bytes, low-frequency, never bulk.
+- **NAT hole-punching (next).** An ICE agent (`pion/ice` earns its place here)
+  doing the simultaneous-open over the gathered candidates, for the NAT pairs a
+  direct dial to the reflexive/LAN endpoints cannot reach. The cached-known-
+  endpoint and easy-NAT cases work from the beacon endpoints alone before this.
+
+Reusing the same socket the beacon advertised is why `stunc.Reflexive` takes a
+caller-owned `net.PacketConn`: the reflexive mapping is per-socket, so the data
+path must use the socket STUN measured.
 
 **Tier 2 — relay (later, only if wanted).** An optional user-run relay for the
 pairs Tier 1 can't punch. A server, so it's opt-in and off by default; the
@@ -254,5 +286,10 @@ the write does not.
    connect → exchange manifests → pull-missing → apply → report, with
    `--for`/`--watch`/`--peer` selecting the listener lifetime. This is v1's
    primary surface; no daemon, extension, or Firefox Sync required.
-8. (Tier 1, later) Firefox-Sync signaling + companion extension for cross-network
-   rendezvous and a status-grid UI; opt-in user-service daemon for set-and-forget.
+8. **Tier 1 cross-network rendezvous** — foundation done: `internal/stunc`
+   (reflexive candidate via STUN) + `internal/rendezvous` (sealed beacons + a
+   `Signaling` interface, with a filesystem `DirSignaling` for tests/manual
+   rendezvous). Next: the companion extension as the `storage.sync` `Signaling`
+   carrier, NAT hole-punching (`pion/ice`) for the hard NAT pairs, and the
+   `gusset sync` wiring (gather → seal+publish → fetch → dial), plus a status-grid
+   UI; opt-in user-service daemon for set-and-forget.

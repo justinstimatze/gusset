@@ -207,6 +207,27 @@
   status layer's auth-failed) or mid-serve error is visible, not black-holed.
   The `storage.sync` signaling adapter (endpoint + pubkey exchange) lands later
   with the extension.
+- Tier 1 cross-network rendezvous — foundation (transport doc §4, build step 8):
+  - `internal/stunc`: a minimal RFC 8489 STUN Binding client that answers "what
+    is my public IP:port?" — open a UDP socket, query a public STUN server, decode
+    the XOR-MAPPED-ADDRESS (legacy MAPPED-ADDRESS as fallback). Hand-rolled,
+    dependency-free (~100 lines) rather than pulling the full `pion` tree, since
+    reflexive discovery is all that is needed until hole-punching is built; `pion`
+    earns its place at the ICE step. The caller owns the `net.PacketConn` so the
+    socket STUN measured is the one the data path later reuses. Tested hermetically
+    against an in-process STUN responder (XOR + legacy forms, stray-datagram skip,
+    context timeout).
+  - `internal/rendezvous`: the signaling contract. A `Beacon` (device id, label,
+    LAN endpoints, reflexive candidate, caller-supplied issued-at) is AEAD-sealed
+    with the passphrase-derived key before publication — the carrier (Firefox Sync)
+    sees only ciphertext, and a beacon that `Open`s is thereby proven to come from
+    a passphrase-holder (no separate signature; domain-separated by AAD from chunk
+    ciphertext). A `Signaling` interface abstracts the carrier; `DirSignaling` (a
+    shared directory, atomic 0600 writes, self-excluding fetch) is the test and
+    manual-rendezvous impl. The production carrier (the companion extension over
+    `storage.sync`) and NAT hole-punching (`pion/ice`) are the next Tier-1 steps.
+  - macOS note: both packages are OS-agnostic and cross-compile clean for darwin
+    alongside the ffctl split above.
 - `internal/chunk`: content-defined chunking (restic/chunker / FastCDC) →
   per-chunk keyed addressing + AEAD, plus signed manifest types. The chunker
   polynomial is derived per-user from the key (`crypto.Stream`), so boundaries
