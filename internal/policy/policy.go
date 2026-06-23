@@ -5,7 +5,10 @@
 // docs/transport-and-security.md §3.
 package policy
 
-import "sort"
+import (
+	"regexp"
+	"sort"
+)
 
 // Decision is the result of evaluating an extension against the policy.
 type Decision struct {
@@ -92,35 +95,74 @@ func (p *Policy) ensure() {
 	}
 }
 
-// Evaluate decides whether extID may be synced and always explains why. Order of
-// checks: not allowlisted -> denied; allowlisted but sensitive without override
-// -> denied; allowlisted and (not sensitive or overridden) -> allowed.
+// Evaluate decides whether extID may be synced and always explains why, using
+// only the built-in ID denylist. Prefer EvaluateNamed when a display name is
+// available — it adds the name heuristic that catches credential extensions not
+// on the denylist.
 func (p *Policy) Evaluate(extID string) Decision {
-	sens, isSensitive := sensitiveByID[extID]
+	return p.evaluate(extID, "")
+}
+
+// EvaluateNamed is Evaluate plus a name-based heuristic: if the extension's
+// human-readable name looks like a credential/secret store, it is treated as
+// sensitive (deny-with-override) even when its ID is not on the built-in
+// denylist. The heuristic can false-positive (e.g. a harmless "Password
+// Generator"); the cost is only an explicit override, which is the safe
+// direction. Callers that have the display name (doctor, the extension UI)
+// should use this.
+func (p *Policy) EvaluateNamed(extID, name string) Decision {
+	return p.evaluate(extID, name)
+}
+
+// evaluate is the shared core. Order of checks: not allowlisted -> denied;
+// allowlisted but sensitive without override -> denied; allowlisted and (not
+// sensitive or overridden) -> allowed.
+func (p *Policy) evaluate(extID, name string) Decision {
+	sens, byID := sensitiveByID[extID]
+	sensitive := byID
+	label := ""
+	switch {
+	case byID:
+		label = sens.Name + " is a known credential/secret store"
+	case LooksSensitiveName(name):
+		sensitive = true
+		label = name + " — its name looks like a credential/secret store"
+	}
 
 	if !p.has(p.Allowlist, extID) {
 		return Decision{
 			Allowed:   false,
-			Sensitive: isSensitive,
+			Sensitive: sensitive,
 			Reason:    "not in the allowlist (sync is opt-in; add it to enable)",
 		}
 	}
 
-	if isSensitive && !p.has(p.Overrides, extID) {
+	if sensitive && !p.has(p.Overrides, extID) {
 		return Decision{
 			Allowed:   false,
 			Sensitive: true,
-			Reason: "blocked — " + sens.Name + " is a credential/secret store; " +
-				"it runs its own encrypted sync and its tokens are device-bound. " +
-				"Override explicitly if you really mean to.",
+			Reason: "blocked — " + label + "; such stores run their own encrypted " +
+				"sync and hold device-bound tokens. Override explicitly if you really mean to.",
 		}
 	}
 
 	reason := "allowlisted"
-	if isSensitive {
+	if sensitive {
 		reason = "allowlisted with an explicit sensitive-override"
 	}
-	return Decision{Allowed: true, Sensitive: isSensitive, Reason: reason}
+	return Decision{Allowed: true, Sensitive: sensitive, Reason: reason}
+}
+
+// sensitiveNameRe matches human-readable extension names suggestive of a
+// credential, password, 2FA, or wallet store. Deliberately broad: a false
+// positive only forces an explicit override (the safe direction), while a miss
+// would let a credential extension sync unwarned.
+var sensitiveNameRe = regexp.MustCompile(`(?i)(password|passwd|\bpass\b|vault|authenticat|two[- ]?factor|\b2fa\b|\botp\b|\btotp\b|keepass|bitwarden|lastpass|1password|dashlane|nordpass|proton ?pass|enpass|\bwallet\b|seed ?phrase|private ?key|\bsecret)`)
+
+// LooksSensitiveName reports whether a human-readable extension name suggests a
+// credential/secret store, for the deny-with-override heuristic.
+func LooksSensitiveName(name string) bool {
+	return name != "" && sensitiveNameRe.MatchString(name)
 }
 
 func (p *Policy) has(m map[string]bool, id string) bool { return m != nil && m[id] }

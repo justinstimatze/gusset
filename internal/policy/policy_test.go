@@ -82,6 +82,54 @@ func TestZeroValuePolicyIsSafe(t *testing.T) {
 	}
 }
 
+func TestEvaluateNamed_HeuristicCatchesUnknownCredentialExt(t *testing.T) {
+	const unknownPM = "{some-unlisted-uuid}" // not on the built-in denylist
+	p := New()
+	p.Allow(unknownPM)
+
+	// By ID alone it would be allowed; the name heuristic flags it.
+	if d := p.Evaluate(unknownPM); !d.Allowed {
+		t.Fatalf("ID-only eval unexpectedly denied: %s", d.Reason)
+	}
+	d := p.EvaluateNamed(unknownPM, "Acme Password Vault")
+	if d.Allowed {
+		t.Fatal("name heuristic should deny an unlisted credential-looking extension")
+	}
+	if !d.Sensitive {
+		t.Error("name heuristic should set Sensitive")
+	}
+
+	// Explicit override lets it through.
+	p.Override(unknownPM)
+	if d := p.EvaluateNamed(unknownPM, "Acme Password Vault"); !d.Allowed {
+		t.Fatalf("override should allow heuristic-flagged extension: %s", d.Reason)
+	}
+}
+
+func TestEvaluateNamed_OrdinaryNamePasses(t *testing.T) {
+	p := New()
+	p.Allow(ordinaryExt)
+	d := p.EvaluateNamed(ordinaryExt, "uBlock Origin")
+	if !d.Allowed || d.Sensitive {
+		t.Fatalf("ordinary named extension mis-flagged: allowed=%v sensitive=%v", d.Allowed, d.Sensitive)
+	}
+}
+
+func TestLooksSensitiveName(t *testing.T) {
+	sensitive := []string{"1Password", "Bitwarden", "KeePassXC", "Authenticator", "My Crypto Wallet", "Two-Factor Auth", "Seed Phrase Backup", "Proton Pass"}
+	for _, n := range sensitive {
+		if !LooksSensitiveName(n) {
+			t.Errorf("%q should look sensitive", n)
+		}
+	}
+	ordinary := []string{"uBlock Origin", "Dark Reader", "Tree Style Tab", "Reader View", ""}
+	for _, n := range ordinary {
+		if LooksSensitiveName(n) {
+			t.Errorf("%q should not look sensitive", n)
+		}
+	}
+}
+
 func TestIsSensitiveAndList(t *testing.T) {
 	if !IsSensitive(sensitiveExt) {
 		t.Errorf("%s should be sensitive", sensitiveExt)

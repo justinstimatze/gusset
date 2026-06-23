@@ -38,3 +38,13 @@
   chunk encryption, HMAC-SHA256 keyed content-addressing, and label-scoped
   `Subkey` derivation for peer auth. Keys are reproducible across machines from
   the passphrase alone (fixed app salt; per-user random salt supported).
+- Security review hardening (crypto + policy):
+  - **M2** — `Seal`/`Open` now take the content-address as AAD, binding a
+    ciphertext to its address so it cannot be served from another; documented the
+    matching post-decrypt re-verification invariant for the chunk layer.
+  - **M1** — per-user random salt is the recommended default (`NewSalt`); added
+    `ValidatePassphrase` (structural strength floor) and `EntropyBits`.
+  - **L1** — `Subkey` returns an error instead of panicking past the HKDF limit.
+  - **L2** — policy gains `EvaluateNamed` + `LooksSensitiveName`: a name
+    heuristic that deny-with-overrides credential-looking extensions not on the
+    built-in denylist.

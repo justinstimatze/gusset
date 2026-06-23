@@ -65,6 +65,24 @@ chunk.** Encrypting before chunking would destroy dedup. Chunk *sizes* remain
 visible to an on-path observer (minor structural metadata leak); padding is a
 later option, not v1.
 
+**Hardening decisions (from the d09a9a0 security review):**
+
+- **M1 — salt & passphrase strength.** The recommended derivation uses a
+  **per-user random salt** (`crypto.NewSalt`), generated once and shared at first
+  pairing alongside the passphrase. It restores Argon2id's per-target cost and
+  removes cross-user key/address linkage. `crypto.AppSalt` (fixed) remains only
+  for the no-shared-state "passphrase-alone" fallback. User-supplied passphrases
+  must pass `crypto.ValidatePassphrase` **at setup** (a coarse structural floor —
+  the real assurance is `GeneratePassphrase` over a quality wordlist); derivation
+  thereafter is not re-gated.
+- **M2 — bind ciphertext to its address.** `crypto.Seal/Open` take the chunk's
+  content-address as **AAD**, so a ciphertext served from the wrong address fails
+  `Open`. **Invariant the chunk layer MUST uphold:** seal each chunk with
+  `aad = []byte(address)` where `address = K_addr-HMAC(plaintext)`, and after
+  `Open` **re-verify** `Address(plaintext) == requested address` before trusting
+  the bytes. Belt (AAD) and suspenders (post-decrypt address check) — a chunk
+  must never be accepted from an address it wasn't sealed under.
+
 ## 3. Policy — safe by default, opt-in per extension
 
 - **Empty allowlist by default. gusset syncs nothing until you add an extension
