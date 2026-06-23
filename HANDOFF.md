@@ -358,8 +358,19 @@ differences from leaking past `internal/store` and `internal/profile`.
    Still TODO on top of it: the `storage.sync` **signaling** adapter that
    publishes/reads each device's endpoint + pubkey (lives behind the extension/WS).
 
+10. ✅ `internal/status` — the single never-sync-silently status source: a
+    concurrency-safe model of peers + per-extension/per-peer sync state, one
+    sorted JSON `Snapshot` for all three surfaces, and the "every non-converged
+    state shows a reason (loudly, if it arrived without one)" invariant enforced
+    at render. `gusset status` renders it; the live model will be read from the
+    daemon over the localhost WS (until the daemon exists, the command says so
+    honestly and shows the empty model). Decoupled from transport — the daemon
+    bridges `transport.ConnError` (PhaseHandshake → `auth-failed`).
+
 **Next:**
-10. Status plumbing (`gusset status` + localhost WS JSON), then the companion
-    extension (manifest/signaling courier + status UI), then the daemon loop
-    tying Export/Import to transport + policy on a schedule. The signaling
-    adapter (item 9's remainder) lands with the extension/WS work.
+11. The companion **extension** + localhost **WS** server: the daemon serves the
+    status `Snapshot` as JSON over the WS the extension reads, and the extension
+    is the signaling courier (publishes/reads each device's endpoint + pubkey via
+    `storage.sync` — item 9's remaining adapter) and the status-grid UI.
+12. The **daemon loop** tying Export/Import to transport + policy on a schedule,
+    bridging `transport.ConnError` and sync progress into `internal/status`.

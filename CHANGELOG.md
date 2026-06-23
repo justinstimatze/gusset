@@ -66,6 +66,21 @@
   store can be re-homed onto a machine where the origin dir does not yet exist.
   Verified end-to-end: a live uBO snapshot applies onto a synthetic profile with
   a different UUID, data intact.
+- `internal/status`: the single status source behind the never-sync-silently
+  rule (docs/transport-and-security.md §6). A concurrency-safe model of paired
+  peers (`discovering → … → connected(lan) | unreachable(reason)`) and
+  per-extension × per-peer sync state (`in-sync | pushing | pulling | stale |
+  blocked | error`), producing one sorted, JSON-marshalable `Snapshot` that all
+  three surfaces render. The "never silent" invariant is enforced at render:
+  every non-converged state yields a non-empty reason, and one that arrived
+  without an explanation renders a loud fallback rather than a blank. Decoupled
+  from the data plane (the daemon will bridge a `transport.ConnError`
+  PhaseHandshake into an `auth-failed` peer), so it imports nothing of transport;
+  timestamps are caller-supplied for deterministic tests.
+- `gusset status`: renders peers and per-extension sync state with reasons. The
+  live model is owned by the daemon (read over the localhost WS later); until the
+  daemon exists this reports honestly that none is running and renders the empty
+  model explicitly — "nothing configured" is shown, not hidden.
 - `internal/transport`: Tier-0 LAN-direct data plane, in three testable layers.
   (1) A chunk request/response wire protocol (`Has`/`Get`, length-framed, with
   bounded reads) over any `io.ReadWriteCloser` — `Client.Get` is the callback

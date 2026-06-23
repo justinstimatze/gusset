@@ -68,6 +68,8 @@ func main() {
 		fmt.Println(buildVersion())
 	case "doctor":
 		err = doctor()
+	case "status":
+		err = statusCmd()
 	default:
 		fmt.Fprintf(os.Stderr, "gusset: unknown command %q\n", args[0])
 		usage()
@@ -85,6 +87,7 @@ func usage() {
 usage:
   gusset version    print the build version
   gusset doctor     resolve the active Firefox profile and list installed extensions
+  gusset status     report sync status (peers and per-extension state, with reasons)
 `)
 }
 
