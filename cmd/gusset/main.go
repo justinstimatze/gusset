@@ -9,6 +9,7 @@ import (
 	"runtime/debug"
 	"sort"
 
+	"github.com/justinstimatze/gusset/internal/ffctl"
 	"github.com/justinstimatze/gusset/internal/profile"
 )
 
@@ -126,6 +127,17 @@ func doctor() error {
 		return err
 	}
 	fmt.Printf("active profile:  %s\n", dir)
+
+	switch st, pid, _ := ffctl.InspectLock(dir); st {
+	case ffctl.LockedLive:
+		fmt.Printf("profile lock:    held by running Firefox (pid %d) — close it before applying a sync\n", pid)
+	case ffctl.LockedStale:
+		fmt.Printf("profile lock:    stale (pid %d is not Firefox) — `gusset sync` will clear it\n", pid)
+	case ffctl.Unlocked:
+		fmt.Printf("profile lock:    none (Firefox not running)\n")
+	default:
+		fmt.Printf("profile lock:    present but unrecognized — left untouched\n")
+	}
 
 	uuids, err := profile.ExtensionUUIDs(dir)
 	if err != nil {

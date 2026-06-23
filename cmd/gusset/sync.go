@@ -74,6 +74,15 @@ func syncCmd(args []string) error {
 		return err
 	}
 
+	// A stale lock (crash residue, or a recycled PID) would otherwise block
+	// apply even though no Firefox is running. Clearing it is provably safe —
+	// ffctl only removes a lock no live Firefox holds — so do it unconditionally.
+	if cleared, cerr := ffctl.ClearStale(profDir); cerr != nil {
+		fmt.Fprintf(os.Stderr, "lock check: %v\n", cerr)
+	} else if cleared {
+		fmt.Println("cleared a stale Firefox lock (no running Firefox held the profile).")
+	}
+
 	// Opt-in: close Firefox up front so incoming settings apply cleanly, and
 	// relaunch it when the run ends. Only acts if Firefox is actually running.
 	if *restartFF {

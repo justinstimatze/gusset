@@ -56,6 +56,89 @@ func LockHolderPID(profileDir string) (pid int, ok bool, err error) {
 	return pid, true, nil
 }
 
+// LockStatus classifies a profile's lock symlink.
+type LockStatus int
+
+const (
+	Unlocked    LockStatus = iota // no lock symlink: Firefox not running
+	LockedLive                    // held by a process confirmed to be Firefox
+	LockedStale                   // lock present but no running Firefox holds it
+	LockUnknown                   // lock present but unparseable: do not auto-clear
+)
+
+func (s LockStatus) String() string {
+	switch s {
+	case Unlocked:
+		return "unlocked"
+	case LockedLive:
+		return "locked-live"
+	case LockedStale:
+		return "locked-stale"
+	default:
+		return "unknown"
+	}
+}
+
+// InspectLock classifies profileDir's lock: Unlocked (no symlink), LockedLive
+// (a running Firefox holds it), LockedStale (the lock lingers but its holder is
+// gone or is some other process — e.g. a crash, or a recycled PID), or
+// LockUnknown (the symlink target is unparseable, so liveness can't be judged
+// and the lock must not be auto-cleared). pid is the holder when known.
+func InspectLock(profileDir string) (LockStatus, int, error) {
+	target, err := os.Readlink(filepath.Join(profileDir, "lock"))
+	if errors.Is(err, os.ErrNotExist) {
+		return Unlocked, 0, nil
+	}
+	if err != nil {
+		return LockUnknown, 0, fmt.Errorf("ffctl: read lock: %w", err)
+	}
+	pid, perr := parseLockPID(target)
+	if perr != nil {
+		return LockUnknown, 0, nil // present but unrecognized; leave it alone
+	}
+	if looksLikeFirefox(pid) {
+		return LockedLive, pid, nil
+	}
+	return LockedStale, pid, nil
+}
+
+// ClearStale removes the profile lock only when it is provably stale — no
+// running Firefox holds it. It re-checks liveness immediately before removing
+// (closing the check-then-act window: if a Firefox started in the meantime and
+// now holds the lock, it aborts), and is a no-op when the profile is unlocked,
+// held by a live Firefox, or in an unparseable state. store.Apply independently
+// re-checks the lock, so this only removes a false "running" signal, never a real
+// one. Returns cleared=true only if it actually removed the lock.
+func ClearStale(profileDir string) (cleared bool, err error) {
+	status, _, err := InspectLock(profileDir)
+	if err != nil {
+		return false, err
+	}
+	if status != LockedStale {
+		return false, nil
+	}
+	// Re-read right before removing: if the holder is now Firefox, a browser
+	// started since the inspection — do not remove its live lock.
+	lock := filepath.Join(profileDir, "lock")
+	target, err := os.Readlink(lock)
+	if errors.Is(err, os.ErrNotExist) {
+		return false, nil // already gone
+	}
+	if err != nil {
+		return false, fmt.Errorf("ffctl: re-read lock: %w", err)
+	}
+	if pid, perr := parseLockPID(target); perr == nil && looksLikeFirefox(pid) {
+		return false, nil // became live; leave it
+	}
+	if err := os.Remove(lock); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return false, nil
+		}
+		return false, fmt.Errorf("ffctl: remove stale lock: %w", err)
+	}
+	return true, nil
+}
+
 // looksLikeFirefox checks the process command so a misparsed or recycled PID is
 // never signaled by mistake. It reads /proc/<pid>/comm and /proc/<pid>/cmdline.
 func looksLikeFirefox(pid int) bool {

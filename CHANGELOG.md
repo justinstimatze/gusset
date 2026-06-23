@@ -112,6 +112,14 @@
   `/proc/<pid>/{comm,cmdline}` — verified in practice when it declined to kill a
   recycled PID behind a stale lock. Off by default; closing the browser is
   destructive, so it only runs when the user passes the flag. Linux for v1.
+  - Stale-lock recovery: a lingering `lock` symlink (a crash, or a recycled PID)
+    would otherwise block apply forever even with no Firefox running. `ffctl`
+    gains `InspectLock` (Unlocked / LockedLive / LockedStale / LockUnknown) and
+    `ClearStale`, which removes a lock only when no live Firefox holds it,
+    re-checking liveness immediately before removal to close the check-then-act
+    race; an unparseable lock is left untouched. `gusset sync` clears a stale
+    lock automatically (provably safe — `store.Apply` independently re-checks the
+    lock as a backstop), and `gusset doctor` now reports lock status.
 - Receiver activation is now communicated clearly. Firefox loads `storage.local`
   at startup and locks the profile while running, so applying incoming settings
   has two user-visible preconditions, both stated plainly rather than left as a

@@ -60,6 +60,73 @@ func TestLockHolderPID_ReadsSymlinkPID(t *testing.T) {
 	}
 }
 
+func TestInspectLock_Unlocked(t *testing.T) {
+	st, _, err := InspectLock(t.TempDir())
+	if err != nil || st != Unlocked {
+		t.Fatalf("empty profile: got %v err=%v, want unlocked", st, err)
+	}
+}
+
+func TestInspectLock_StaleWhenHolderNotFirefox(t *testing.T) {
+	dir := t.TempDir()
+	// Our own PID is alive but is the test binary, not Firefox -> stale.
+	target := "127.0.0.1:+" + strconv.Itoa(os.Getpid())
+	if err := os.Symlink(target, filepath.Join(dir, "lock")); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	st, pid, err := InspectLock(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st != LockedStale || pid != os.Getpid() {
+		t.Fatalf("got %v pid=%d, want locked-stale pid=%d", st, pid, os.Getpid())
+	}
+}
+
+func TestInspectLock_UnknownWhenUnparseable(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.Symlink("garbage-no-pid", filepath.Join(dir, "lock")); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	st, _, err := InspectLock(dir)
+	if err != nil || st != LockUnknown {
+		t.Fatalf("unparseable lock: got %v err=%v, want unknown", st, err)
+	}
+}
+
+func TestClearStale_RemovesStaleLockOnly(t *testing.T) {
+	dir := t.TempDir()
+	lock := filepath.Join(dir, "lock")
+	if err := os.Symlink("127.0.0.1:+"+strconv.Itoa(os.Getpid()), lock); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	cleared, err := ClearStale(dir)
+	if err != nil || !cleared {
+		t.Fatalf("expected to clear a stale lock, got cleared=%v err=%v", cleared, err)
+	}
+	if _, err := os.Lstat(lock); !os.IsNotExist(err) {
+		t.Fatal("stale lock was not removed")
+	}
+	// Second call is a clean no-op now that the profile is unlocked.
+	if cleared, err := ClearStale(dir); err != nil || cleared {
+		t.Fatalf("clear on unlocked profile should be a no-op, got cleared=%v err=%v", cleared, err)
+	}
+}
+
+func TestClearStale_LeavesUnparseableLock(t *testing.T) {
+	dir := t.TempDir()
+	lock := filepath.Join(dir, "lock")
+	if err := os.Symlink("garbage-no-pid", lock); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	if cleared, err := ClearStale(dir); err != nil || cleared {
+		t.Fatalf("must not clear an unparseable lock, got cleared=%v err=%v", cleared, err)
+	}
+	if _, err := os.Lstat(lock); err != nil {
+		t.Fatal("unparseable lock should have been left in place")
+	}
+}
+
 func TestStop_NotRunningIsNoop(t *testing.T) {
 	stopped, err := Stop(t.TempDir(), time.Second)
 	if err != nil {
