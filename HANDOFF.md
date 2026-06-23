@@ -344,9 +344,14 @@ differences from leaking past `internal/store` and `internal/profile`.
 7. ✅ `internal/store` **Apply** path — 3-place UUID rewrite + atomic swap,
    verified re-homing a live store onto a different-UUID target.
 
+8. ✅ `internal/syncx` — snapshot dir ⇄ stream serialization + Export/Import
+   wiring + LWW. Full local pipeline verified end-to-end (live store → chunks →
+   re-home onto a different-UUID target, 42 keys intact).
+
 **Next:**
-8. `internal/transport` — Tier-0 LAN-direct backend, signaled via `storage.sync`.
-9. `internal/sync` — serialize a snapshot dir ⇄ stream (the store⇄chunk seam),
-   delta detection, LWW; wire snapshot→chunk→transport→reconstruct→apply.
+9. `internal/transport` — Tier-0 LAN-direct backend, signaled via `storage.sync`
+   (`Has`/`Put`/`Get` over an authenticated localhost-pair connection). This is
+   the first networked piece; everything above it is done and verified locally.
 10. Status plumbing (`gusset status` + localhost WS JSON), then the companion
-    extension (manifest/signaling courier + status UI).
+    extension (manifest/signaling courier + status UI), then the daemon loop
+    tying Export/Import to transport + policy on a schedule.

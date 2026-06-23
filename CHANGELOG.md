@@ -48,6 +48,14 @@
   - **L2** — policy gains `EvaluateNamed` + `LooksSensitiveName`: a name
     heuristic that deny-with-overrides credential-looking extensions not on the
     built-in denylist.
+- `internal/syncx`: the integration seam. Deterministic, reversible snapshot
+  directory ⇄ stream serialization (timestamp-free, so identical content packs
+  identically and dedups; unpack rejects path-traversal/absolute entries), plus
+  `Export`/`Import` wiring store → chunk → transport → reconstruct → store.Apply,
+  and `Newer` (last-writer-wins by timestamp). Verified end-to-end: a live uBO
+  store snapshots, packs, chunks+encrypts (366 chunks), round-trips through an
+  opaque address→ciphertext map, and applies onto a different-UUID target with
+  all 42 keys intact; a wrong key fails the import.
 - `internal/store` Apply (the write path): installs a snapshot into a target
   profile, re-homing it onto that machine's per-install UUID by rewriting the
   UUID in all three places it is embedded (origin dir name, `.metadata-v2`,
