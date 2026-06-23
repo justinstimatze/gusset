@@ -66,6 +66,21 @@
   store can be re-homed onto a machine where the origin dir does not yet exist.
   Verified end-to-end: a live uBO snapshot applies onto a synthetic profile with
   a different UUID, data intact.
+- `internal/transport`: Tier-0 LAN-direct data plane, in three testable layers.
+  (1) A chunk request/response wire protocol (`Has`/`Get`, length-framed, with
+  bounded reads) over any `io.ReadWriteCloser` — `Client.Get` is the callback
+  `chunk.Reconstruct`/`syncx.Import` consume; a `MapSource` serves the
+  address→ciphertext map `chunk.Split` produces. (2) A passphrase-derived
+  Ed25519 **peer identity** that becomes a **pinned mutual-TLS** config: both
+  devices derive the same keypair from the passphrase, and each pins the peer's
+  cert to that public key — so authentication is "proves knowledge of the shared
+  passphrase," with no CA, no enrollment, and no transport account (TLS 1.3's
+  CertificateVerify supplies the private-key-possession proof). (3) A LAN
+  server/client over loopback TCP wiring the two. The transport only ever sees
+  opaque ciphertext. Verified end-to-end over real mutual-TLS, including the full
+  `chunk.Split` → serve → `Client.Get` → `chunk.Reconstruct` seam and that a
+  wrong-passphrase dialer is rejected at the handshake. The `storage.sync`
+  signaling adapter (endpoint + pubkey exchange) lands later with the extension.
 - `internal/chunk`: content-defined chunking (restic/chunker / FastCDC) →
   per-chunk keyed addressing + AEAD, plus signed manifest types. The chunker
   polynomial is derived per-user from the key (`crypto.Stream`), so boundaries

@@ -264,8 +264,8 @@ internal/crypto/     passphrase -> Argon2id -> K_enc/K_addr/peer-auth;  [TODO]
 internal/chunk/      FastCDC wrapper (restic/chunker); keyed-hash +      [TODO]
                      encrypt per chunk; manifest types
 internal/sync/       delta detection, atomic apply, LWW conflict policy [TODO]
-internal/transport/  Transport interface; v1 = p2p Tier-0 LAN-direct,   [TODO]
-                     signaled via storage.sync (NAT/relay tiers later)
+internal/transport/  Tier-0 LAN-direct: pinned mutual-TLS + chunk proto [DONE]
+                     (storage.sync signaling adapter still TODO; NAT/relay later)
 internal/status/     single status source; never-sync-silently model    [TODO]
 extension/           companion WebExtension: manifest + signaling        [TODO]
                      courier (storage.sync), status UI, localhost-WS client
@@ -348,10 +348,18 @@ differences from leaking past `internal/store` and `internal/profile`.
    wiring + LWW. Full local pipeline verified end-to-end (live store → chunks →
    re-home onto a different-UUID target, 42 keys intact).
 
+9. ✅ `internal/transport` — Tier-0 LAN-direct backend. Three testable layers:
+   the chunk request/response wire protocol (`Has`/`Get` over any
+   `io.ReadWriteCloser`); a passphrase-derived Ed25519 **peer identity** that
+   becomes a pinned **mutual-TLS** config (no CA, no account — auth is "proves
+   the shared passphrase"); and the LAN server/client over loopback TCP.
+   Verified end-to-end over real mutual-TLS, including the chunk seam
+   (`Client.Get` → `chunk.Reconstruct`) and wrong-passphrase handshake rejection.
+   Still TODO on top of it: the `storage.sync` **signaling** adapter that
+   publishes/reads each device's endpoint + pubkey (lives behind the extension/WS).
+
 **Next:**
-9. `internal/transport` — Tier-0 LAN-direct backend, signaled via `storage.sync`
-   (`Has`/`Put`/`Get` over an authenticated localhost-pair connection). This is
-   the first networked piece; everything above it is done and verified locally.
 10. Status plumbing (`gusset status` + localhost WS JSON), then the companion
     extension (manifest/signaling courier + status UI), then the daemon loop
-    tying Export/Import to transport + policy on a schedule.
+    tying Export/Import to transport + policy on a schedule. The signaling
+    adapter (item 9's remainder) lands with the extension/WS work.
