@@ -79,8 +79,12 @@
   server/client over loopback TCP wiring the two. The transport only ever sees
   opaque ciphertext. Verified end-to-end over real mutual-TLS, including the full
   `chunk.Split` → serve → `Client.Get` → `chunk.Reconstruct` seam and that a
-  wrong-passphrase dialer is rejected at the handshake. The `storage.sync`
-  signaling adapter (endpoint + pubkey exchange) lands later with the extension.
+  wrong-passphrase dialer is rejected at the handshake. The listener swallows
+  per-connection failures (one bad peer must not take it down) but reports them
+  to an optional `WithConnErrorHandler` observer — so a failed handshake (the
+  status layer's auth-failed) or mid-serve error is visible, not black-holed.
+  The `storage.sync` signaling adapter (endpoint + pubkey exchange) lands later
+  with the extension.
 - `internal/chunk`: content-defined chunking (restic/chunker / FastCDC) →
   per-chunk keyed addressing + AEAD, plus signed manifest types. The chunker
   polynomial is derived per-user from the key (`crypto.Stream`), so boundaries

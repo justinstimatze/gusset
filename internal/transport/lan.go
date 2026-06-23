@@ -14,11 +14,55 @@ import (
 // few seconds is generous and keeps "peer offline" status snappy.
 const dialTimeout = 5 * time.Second
 
+// ConnPhase identifies where a per-connection failure happened, so an observer
+// can classify it for status (docs/transport-and-security.md §6): a handshake
+// failure is the status layer's auth-failed, a serve failure is error(detail).
+type ConnPhase int
+
+const (
+	// PhaseHandshake is a mutual-TLS handshake failure — most often a peer that
+	// cannot prove the shared passphrase (wrong passphrase / unauthorized dialer).
+	PhaseHandshake ConnPhase = iota
+	// PhaseServe is a protocol or IO error after a peer was authenticated.
+	PhaseServe
+)
+
+func (p ConnPhase) String() string {
+	if p == PhaseHandshake {
+		return "handshake"
+	}
+	return "serve"
+}
+
+// ConnError reports a single connection's failure to an optional observer. The
+// listener always swallows these so one bad peer cannot take it down; the
+// observer exists so they are not *invisible* — the status layer and logs can
+// see auth failures and protocol errors as they happen.
+type ConnError struct {
+	Remote net.Addr
+	Phase  ConnPhase
+	Err    error
+}
+
+// Option configures a Server at construction. Options are applied before the
+// accept loop starts and never mutated after, so the Server's fields are safe to
+// read from the per-connection goroutines without locking.
+type Option func(*Server)
+
+// WithConnErrorHandler installs an observer for per-connection failures
+// (handshake and serve). It is invoked from the per-connection goroutine, so the
+// handler must be safe for concurrent calls. It does not change the listener's
+// behavior — failures are still swallowed — it only makes them observable.
+func WithConnErrorHandler(fn func(ConnError)) Option {
+	return func(s *Server) { s.onErr = fn }
+}
+
 // Server is the Tier-0 listening side: it accepts mutual-TLS connections from
 // peers proving the shared passphrase and serves encrypted chunks from src.
 type Server struct {
-	ln  net.Listener
-	src ChunkSource
+	ln    net.Listener
+	src   ChunkSource
+	onErr func(ConnError) // optional; set once at construction via Option
 
 	mu     sync.Mutex
 	closed bool
@@ -27,7 +71,8 @@ type Server struct {
 // Listen starts a Tier-0 LAN server on network/addr (e.g. "tcp",
 // "0.0.0.0:0"), presenting id's passphrase-derived certificate. Use addr with
 // port 0 to get an OS-assigned port, then read Addr to publish it via signaling.
-func Listen(network, addr string, id *Identity, src ChunkSource) (*Server, error) {
+// Pass WithConnErrorHandler to observe per-connection failures.
+func Listen(network, addr string, id *Identity, src ChunkSource, opts ...Option) (*Server, error) {
 	if src == nil {
 		return nil, errors.New("transport: nil chunk source")
 	}
@@ -35,7 +80,11 @@ func Listen(network, addr string, id *Identity, src ChunkSource) (*Server, error
 	if err != nil {
 		return nil, fmt.Errorf("transport: listen: %w", err)
 	}
-	return &Server{ln: ln, src: src}, nil
+	s := &Server{ln: ln, src: src}
+	for _, opt := range opts {
+		opt(s)
+	}
+	return s, nil
 }
 
 // Addr is the actual listening address, including the OS-assigned port when
@@ -60,16 +109,26 @@ func (s *Server) Serve() error {
 
 // handle completes the TLS handshake (so an unauthenticated peer is rejected
 // before it can issue any request) and then serves chunks until the peer hangs
-// up. Per-connection errors are intentionally swallowed: one bad peer must not
-// take down the listener, and the status layer (later) reports reachability.
+// up. Per-connection errors are swallowed — one bad peer must not take down the
+// listener — but reported to the optional observer so they are not invisible.
 func (s *Server) handle(conn net.Conn) {
 	defer func() { _ = conn.Close() }()
 	if tc, ok := conn.(*tls.Conn); ok {
 		if err := tc.Handshake(); err != nil {
-			return // failed peer auth or transport error; drop quietly
+			s.report(conn, PhaseHandshake, err) // failed peer auth or transport error
+			return
 		}
 	}
-	_ = Serve(conn, s.src)
+	if err := Serve(conn, s.src); err != nil {
+		s.report(conn, PhaseServe, err)
+	}
+}
+
+// report hands a per-connection failure to the observer if one is installed.
+func (s *Server) report(conn net.Conn, phase ConnPhase, err error) {
+	if s.onErr != nil {
+		s.onErr(ConnError{Remote: conn.RemoteAddr(), Phase: phase, Err: err})
+	}
 }
 
 // Close stops accepting and unblocks Serve.

@@ -3,6 +3,7 @@ package transport
 import (
 	"bytes"
 	"testing"
+	"time"
 
 	"github.com/justinstimatze/gusset/internal/chunk"
 	"github.com/justinstimatze/gusset/internal/crypto"
@@ -58,6 +59,68 @@ func TestLAN_WrongPassphraseFailsHandshake(t *testing.T) {
 	// A dialer that does not hold the passphrase cannot complete mutual TLS.
 	if _, err := Dial("tcp", addr, attacker); err == nil {
 		t.Fatal("dial with the wrong passphrase should fail at the handshake")
+	}
+}
+
+// TestLAN_ObservesFailedHandshake proves the per-connection error gap is closed:
+// a wrong-passphrase dialer is still rejected, and the failure is now visible to
+// an observer (the status layer's auth-failed signal) instead of black-holed.
+func TestLAN_ObservesFailedHandshake(t *testing.T) {
+	server := deriveIdentity(t, "correct horse battery staple lorem ipsum dolor sit")
+	attacker := deriveIdentity(t, "a totally different eight word secret phrase here")
+
+	errs := make(chan ConnError, 1)
+	srv, err := Listen("tcp", "127.0.0.1:0", server, MapSource{"x": []byte("secret")},
+		WithConnErrorHandler(func(ce ConnError) { errs <- ce }))
+	if err != nil {
+		t.Fatal(err)
+	}
+	go func() { _ = srv.Serve() }()
+	t.Cleanup(func() { _ = srv.Close() })
+
+	if _, err := Dial("tcp", srv.Addr().String(), attacker); err == nil {
+		t.Fatal("dial with the wrong passphrase should fail")
+	}
+	select {
+	case ce := <-errs:
+		if ce.Phase != PhaseHandshake {
+			t.Errorf("phase = %v, want handshake", ce.Phase)
+		}
+		if ce.Err == nil {
+			t.Error("reported ConnError carried no error")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("failed handshake was not reported to the observer")
+	}
+}
+
+// TestLAN_CleanDisconnectIsNotAnError confirms a normal hangup is not reported:
+// the observer is for failures, not routine connection close.
+func TestLAN_CleanDisconnectIsNotAnError(t *testing.T) {
+	id := deriveIdentity(t, "correct horse battery staple lorem ipsum dolor sit")
+	errs := make(chan ConnError, 1)
+	srv, err := Listen("tcp", "127.0.0.1:0", id, MapSource{"a": []byte("1")},
+		WithConnErrorHandler(func(ce ConnError) { errs <- ce }))
+	if err != nil {
+		t.Fatal(err)
+	}
+	go func() { _ = srv.Serve() }()
+	t.Cleanup(func() { _ = srv.Close() })
+
+	client, err := Dial("tcp", srv.Addr().String(), id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.Get("a"); err != nil {
+		t.Fatal(err)
+	}
+	_ = client.Close() // clean hangup
+
+	select {
+	case ce := <-errs:
+		t.Fatalf("clean disconnect was reported as an error: %v", ce.Err)
+	case <-time.After(300 * time.Millisecond):
+		// no report — correct
 	}
 }
 
