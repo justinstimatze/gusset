@@ -122,6 +122,74 @@ func TestBuildOfferAndPull_AppliesPeerNewer(t *testing.T) {
 	}
 }
 
+// TestTwoPeer_RealTLSConverge is the closest thing to a two-box test on one
+// host: peer A serves its live uBO store over a real mutual-TLS listener, and
+// peer B — a separate profile, an identity independently derived from the same
+// passphrase — dials over the socket, fetches the catalog (opOffer over TLS),
+// pulls the chunks, and applies them re-homed onto its own UUID. It exercises
+// the full networked path the in-memory pipe tests cannot: TLS handshake, the
+// wire protocol over a real connection, and apply onto a fresh profile.
+func TestTwoPeer_RealTLSConverge(t *testing.T) {
+	src := liveSource(t) // peer A's real data
+	k, pol := keysAndPoly(t)
+
+	offer, _, err := BuildOffer(src, k, pol, []string{uBOID}, t.TempDir(), 2_000)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	idA, err := transport.DeriveIdentity(k)
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv, err := transport.Listen("tcp", "127.0.0.1:0", idA, offer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	go func() { _ = srv.Serve() }()
+	defer func() { _ = srv.Close() }()
+
+	// Peer B: same passphrase -> same identity, so mutual TLS authenticates.
+	idB, err := transport.DeriveIdentity(k)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client, err := transport.Dial("tcp", srv.Addr().String(), idB)
+	if err != nil {
+		t.Fatalf("peer B dial: %v", err)
+	}
+	defer func() { _ = client.Close() }()
+
+	targetDir := newTargetProfile(t, uBOID)
+	target := store.NewFirefox(targetDir)
+	outcomes, err := Pull(client, target, k, Catalog{}, func(string) bool { return true }, t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(outcomes) != 1 || outcomes[0].Action != Applied {
+		t.Fatalf("expected uBO applied over TLS, got %+v", outcomes)
+	}
+
+	originName := "moz-extension+++" + targetUUID + "^userContextId=4294967295"
+	matches, _ := filepath.Glob(filepath.Join(targetDir, "storage", "default", originName, "idb", "*.sqlite"))
+	if len(matches) != 1 {
+		t.Fatalf("expected one applied sqlite on peer B, found %d", len(matches))
+	}
+	db, err := sql.Open("sqlite", "file:"+matches[0]+"?mode=ro")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+	var keys int
+	if err := db.QueryRow("SELECT count(*) FROM object_data").Scan(&keys); err != nil {
+		t.Fatal(err)
+	}
+	if keys == 0 {
+		t.Fatal("peer B received no keys")
+	}
+	t.Logf("two-peer over TLS: peer B applied %d keys, re-homed to its UUID", keys)
+}
+
 // TestPull_LocalNewerSkips confirms LWW: when our manifest is newer than the
 // peer's, Pull does not apply (and never touches the target).
 func TestPull_LocalNewerSkips(t *testing.T) {

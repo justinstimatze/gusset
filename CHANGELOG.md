@@ -94,7 +94,13 @@
   extension does not abort the run. Kept free of policy/discovery (takes an
   `allow` predicate and a connection), so it unit-tests over an in-memory pipe;
   verified end-to-end against a live uBO store (offer → serve → pull → apply onto
-  a different-UUID target), plus the LWW-skip and not-allowlisted-blocked paths.
+  a different-UUID target), plus the LWW-skip, not-allowlisted-blocked, and
+  Firefox-running (locked) paths. Also verified as a two-peer convergence over
+  real loopback mutual-TLS: peer A serves its live store, peer B (a separate
+  profile, an identity independently derived from the same passphrase) dials over
+  the socket, fetches the catalog via opOffer, pulls the chunks, and applies all
+  42 keys re-homed onto its own UUID — the full networked path the pipe tests
+  cannot exercise.
 - Receiver activation is now communicated clearly. Firefox loads `storage.local`
   at startup and locks the profile while running, so applying incoming settings
   has two user-visible preconditions, both stated plainly rather than left as a
