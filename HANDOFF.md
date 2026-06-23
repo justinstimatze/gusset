@@ -215,9 +215,11 @@ implementing the corresponding piece. (Read the source / inspect a real profile
 
 ## Cross-platform: it's just path resolution
 
-macOS and Linux differ only in the profile root. Everything below is identical.
-Abstract this behind one resolver; the rest of the code is OS-agnostic
-(`os.UserHomeDir()` + a `runtime.GOOS` switch).
+macOS and Linux differ in just two places: the profile root (one resolver,
+`os.UserHomeDir()` + a `runtime.GOOS` switch) and, in `ffctl`, how a PID is
+identified and how Firefox is relaunched (build-tagged `ffctl_{linux,darwin}.go`
+— see item 12). Everything else (snapshot, apply, chunk, crypto, transport,
+rendezvous) is OS-agnostic and cross-compiles for both.
 
 | | Linux | macOS |
 |---|---|---|
@@ -375,10 +377,32 @@ differences from leaking past `internal/store` and `internal/profile`.
     smoke-tested (offer built, listener up, mDNS advertised, status rendered).
     Apply still needs Firefox closed on the receiver (`ErrProfileLocked`).
 
-**Next (Tier 1 / opt-in, later):**
-11b. The companion **extension** + localhost **WS** server: the daemon serves the
-    status `Snapshot` as JSON over the WS the extension reads, and the extension
-    is the signaling courier (publishes/reads each device's endpoint + pubkey via
-    `storage.sync` — item 9's remaining adapter) and the status-grid UI.
-12. The **daemon loop** tying Export/Import to transport + policy on a schedule,
-    bridging `transport.ConnError` and sync progress into `internal/status`.
+12. ✅ **macOS support in `ffctl`** — the two Linux-only seams split into
+    build-tagged files: process identity (`/proc` on Linux, `ps` on macOS) and the
+    default relaunch binary (`firefox` vs the `Firefox.app` inner binary). Lock
+    handling is shared and degrades safely on macOS (no parseable `lock` symlink →
+    "not running" → manual-close fallback, never a wrong SIGTERM). Cross-compiles
+    clean (`GOOS=darwin go build ./...`). The one fact needing a live Mac —
+    whether macOS Firefox writes a parseable `lock` symlink — is flagged under
+    "macOS — UNVERIFIED" in docs/firefox-internals-verified.md, not asserted.
+
+13. ✅ **Tier 1 foundation** — `internal/stunc` (minimal RFC 8489 STUN client:
+    reflexive `IP:port` discovery, hand-rolled/dependency-free; caller owns the
+    socket) + `internal/rendezvous` (sealed `Beacon`s carrying LAN + reflexive
+    candidates; `Open` is the auth gate; a `Signaling` interface with a
+    filesystem `DirSignaling` for tests/manual rendezvous). Both hermetically
+    tested. Mirrors how the transport was built/tested before discovery wired it.
+
+**Next (Tier 1, externally-dependent):**
+14. The companion **extension** as the production `Signaling` carrier: publish each
+    device's sealed beacon to its own `storage.sync` key and read peers' — needs a
+    live Sync round-trip to validate. Plus the localhost **WS** server serving the
+    status `Snapshot` JSON and the status-grid UI.
+15. **NAT hole-punching** — an ICE agent (`pion/ice`) over the gathered
+    candidates, for the NAT pairs a direct dial to the beacon endpoints can't
+    reach. The cached-known-endpoint and easy-NAT cases work from the beacon alone.
+16. **`gusset sync` Tier-1 wiring** — gather (`stunc`) → seal+publish
+    (`rendezvous`) → fetch peers → dial (LAN, then reflexive, then ICE), behind a
+    flag; bridge progress into `internal/status`.
+17. The opt-in **`--watch` user-service** daemon loop for set-and-forget, bridging
+    `transport.ConnError` and sync progress into `internal/status`.
