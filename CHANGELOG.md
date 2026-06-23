@@ -66,6 +66,17 @@
   store can be re-homed onto a machine where the origin dir does not yet exist.
   Verified end-to-end: a live uBO snapshot applies onto a synthetic profile with
   a different UUID, data intact.
+- Two-container LAN test (real mDNS over a bridge). A Docker-gated integration
+  test (`go test -tags docker_integration -run TestTwoBox_Docker ./cmd/gusset/`)
+  runs two gusset containers on a user-defined Docker bridge — each in its own
+  network namespace with its own IP, two genuinely separate network stacks, not
+  loopback. The source serves a copy of the live uBlock store; the target
+  resolves the source by container name over the bridge, dials it, pulls, and
+  applies all 42 keys. A second phase confirms **mDNS discovery works over the
+  bridge** — the target finds the source with no `--peer` at all. gusset is a
+  static CGO-free binary, so the image is FROM scratch with no base pull. The
+  test is behind a build tag (needs Docker, ~25s), so the default `go test ./...`
+  stays fast and dependency-free; it skips cleanly when Docker is absent.
 - Two-process end-to-end test + a bug it found. A new integration test runs two
   real `gusset sync` processes — each with its own HOME (its own Firefox profile)
   and config — over a real loopback TCP/TLS connection: the source serves a copy
