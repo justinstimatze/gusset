@@ -66,6 +66,19 @@
   store can be re-homed onto a machine where the origin dir does not yet exist.
   Verified end-to-end: a live uBO snapshot applies onto a synthetic profile with
   a different UUID, data intact.
+- Two-process end-to-end test + a bug it found. A new integration test runs two
+  real `gusset sync` processes — each with its own HOME (its own Firefox profile)
+  and config — over a real loopback TCP/TLS connection: the source serves a copy
+  of the live uBlock store, the target (a separate profile, a different UUID, no
+  running Firefox) dials it, pulls, and applies all 42 keys re-homed onto its
+  UUID. It exercises the production binary end to end across two OS processes —
+  the closest thing to a two-box LAN run without two machines. A `--listen
+  host:port` flag was added for the source side (the manual-rendezvous companion
+  to `--peer`). The test surfaced a real bug, now fixed: an extension installed
+  but with no `storage.local` yet (e.g. freshly installed) made `BuildOffer`
+  abort the whole sync. `store.Snapshot` now returns a sentinel `ErrNoStore` for
+  that case, and `converge.BuildOffer` skips such an extension (offers nothing)
+  while still letting the machine receive it from a peer.
 - `internal/config` + `gusset init`/`allow`/`disallow`: persisted per-user
   settings (XDG config dir, overridable via `GUSSET_CONFIG_DIR`), so routine
   syncs need no flags or environment. Holds the allowlist, sensitive overrides,

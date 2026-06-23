@@ -40,6 +40,7 @@ func syncCmd(args []string) error {
 	forDur := fs.Duration("for", 30*time.Second, "stay reachable for this long, then exit")
 	watch := fs.Bool("watch", false, "stay reachable indefinitely (until Ctrl-C)")
 	peerAddr := fs.String("peer", "", "dial this host:port directly, skipping mDNS discovery")
+	listenAddr := fs.String("listen", "0.0.0.0:0", "address to listen on (host:port; :0 picks a free port)")
 	extCSV := fs.String("extensions", "", "comma-separated extension IDs to sync (the allowlist)")
 	overrideCSV := fs.String("override", "", "comma-separated sensitive extension IDs to force-enable")
 	restartFF := fs.Bool("restart-firefox", false, "close Firefox to apply, then relaunch it (destructive: closes your browser)")
@@ -130,7 +131,7 @@ func syncCmd(args []string) error {
 		return err
 	}
 	model := status.New()
-	srv, err := transport.Listen("tcp", "0.0.0.0:0", id, offer,
+	srv, err := transport.Listen("tcp", *listenAddr, id, offer,
 		transport.WithConnErrorHandler(func(ce transport.ConnError) {
 			if ce.Phase == transport.PhaseHandshake {
 				fmt.Fprintf(os.Stderr, "rejected an unauthenticated peer from %v\n", ce.Remote)

@@ -37,6 +37,11 @@ func BuildOffer(b *store.Firefox, k *crypto.Keys, pol chunker.Pol, extIDs []stri
 	cat := make(Catalog, len(extIDs))
 	for _, ext := range extIDs {
 		m, cs, err := syncx.Export(b, ext, workDir, k, pol, createdAt)
+		if errors.Is(err, store.ErrNoStore) {
+			// Installed but no storage.local yet (e.g. freshly installed): nothing
+			// to offer, but this machine can still receive it from a peer. Skip.
+			continue
+		}
 		if err != nil {
 			return transport.StaticSource{}, nil, fmt.Errorf("converge: export %s: %w", ext, err)
 		}

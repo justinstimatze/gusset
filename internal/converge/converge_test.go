@@ -122,6 +122,22 @@ func TestBuildOfferAndPull_AppliesPeerNewer(t *testing.T) {
 	}
 }
 
+// TestBuildOffer_SkipsExtensionWithNoStore confirms that an extension which is
+// installed (has a UUID in prefs) but has no storage.local yet is skipped in the
+// offer rather than failing the whole build — so a machine with a freshly
+// installed, empty extension can still serve (nothing) and receive from a peer.
+func TestBuildOffer_SkipsExtensionWithNoStore(t *testing.T) {
+	k, pol := keysAndPoly(t)
+	empty := store.NewFirefox(newTargetProfile(t, uBOID)) // uBO mapped, but no store
+	offer, cat, err := BuildOffer(empty, k, pol, []string{uBOID}, t.TempDir(), 2_000)
+	if err != nil {
+		t.Fatalf("BuildOffer should skip a storeless extension, got: %v", err)
+	}
+	if len(cat) != 0 || len(offer.Chunks) != 0 {
+		t.Fatalf("expected an empty offer, got %d catalog entries, %d chunks", len(cat), len(offer.Chunks))
+	}
+}
+
 // TestTwoPeer_RealTLSConverge is the closest thing to a two-box test on one
 // host: peer A serves its live uBO store over a real mutual-TLS listener, and
 // peer B — a separate profile, an identity independently derived from the same

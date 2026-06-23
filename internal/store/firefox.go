@@ -3,6 +3,7 @@ package store
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -12,6 +13,14 @@ import (
 
 	_ "modernc.org/sqlite" // pure-Go sqlite driver, registered as "sqlite"
 )
+
+// ErrNoStore is returned by Snapshot when the extension is installed (has a
+// per-install UUID) but has not created its storage.local database yet — a
+// freshly installed extension with no settings. Callers that sync many
+// extensions (converge.BuildOffer) treat this as "nothing to offer for this
+// one", not a failure: such a machine still receives the extension's settings
+// from a peer.
+var ErrNoStore = errors.New("store: no storage.local database for extension yet")
 
 // storageLocalDBName is the IndexedDB database that backs browser.storage.local.
 // We identify the right sqlite by this name rather than by guessing the origin
@@ -138,8 +147,8 @@ func (f *Firefox) findStorageLocalDB(uuid string) (dbPath, originSuffix string, 
 			}
 		}
 	}
-	return "", "", fmt.Errorf("no %s database found for UUID %s under: %s",
-		storageLocalDBName, uuid, strings.Join(probed, ", "))
+	return "", "", fmt.Errorf("%w: UUID %s under: %s",
+		ErrNoStore, uuid, strings.Join(probed, ", "))
 }
 
 // originSuffixOf returns the "^userContextId=..." suffix of an origin dir name,
