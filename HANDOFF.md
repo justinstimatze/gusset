@@ -94,12 +94,24 @@ a nicety:
 If a feature would make gusset a heavier guest on Mozilla's infrastructure,
 that's a reason to redesign it, not to ship it.
 
-### Data plane = content-addressed chunk store
+### Data plane = content-addressed chunks, moved peer-to-peer
 
-The bulk chunks (the actual extension settings) go through any dumb,
-append-only substrate: a git repo, an S3/R2 bucket, or a small Syncthing'd
-directory that contains *only* the chunk store. The transport is pluggable
-behind an interface; **git is the default backend** for v1.
+> **Superseded.** The original sketch (this section) sent chunks through a dumb
+> store-and-forward substrate with **git as the default backend**. That was
+> replaced after a privacy/security pass — see
+> **docs/transport-and-security.md** for the authoritative design. Summary of
+> the change: chunks now move **directly device-to-device** (v1: same-LAN
+> direct, signaled through Firefox Sync; NAT traversal and relay are later
+> tiers), encrypted with a key derived from a single 8-word passphrase. No
+> transport account, no server holding data, no durable store. The chunking and
+> manifest design below still stands; only the *transport* changed. The
+> paragraphs below are kept for the chunking rationale and marked where they no
+> longer hold.
+
+The bulk chunks (the actual extension settings) move between the user's own
+machines over a direct, encrypted connection. The transport is pluggable behind
+an interface; the **v1 backend is Tier-0 same-LAN direct** (see the security
+doc). ~~git is the default backend~~ — dropped.
 
 The daemon runs each extension's store through a content-defined chunker
 (FastCDC / rolling hash) so the store splits into variable-size chunks keyed by
@@ -112,13 +124,16 @@ content hash. Two payoffs:
 
 Do not hand-roll the chunker. Use `restic/chunker` (BSD-licensed Go FastCDC).
 
-### Async, resumable, eventually-consistent
+### Opportunistic, resumable, eventually-consistent
 
-Sync does **not** need to be immediate. The daemon keeps a queue and trickles
-chunks opportunistically, rate-limited. Because chunks are immutable and
-content-addressed, interruption is always safe — a half-finished transfer just
-means "not all chunks present yet," never a corrupt state. Resume = re-request
-the missing hashes.
+Sync does **not** need to be immediate. Two of the user's machines converge
+whenever they are **both online** (the assumed common case: both up, same WiFi).
+There is no store-and-forward queue parked on a server — if no two devices are up
+together, nothing moves, and status shows "waiting — peer offline" rather than
+failing silently. Because chunks are immutable and content-addressed,
+interruption is always safe — a half-finished transfer just means "not all
+chunks present yet," never a corrupt state. Resume = re-request the missing
+(keyed) hashes.
 
 **Atomic apply-on-complete:** the receiving side reconstructs the new blob only
 when every chunk in the manifest is present and hash-verified, then swaps it
@@ -126,13 +141,14 @@ into the store atomically. Until then the old settings stay live. A flaky
 channel can dribble for an hour; you see "old" until you see "new," never torn
 state.
 
-### Free version history (bonus, basically free)
+### ~~Free version history~~ — dropped with the durable store
 
-Every manifest is an immutable point-in-time snapshot of content-addressed
-chunks. Keep old manifests and you get settings history / rollback for free.
-"A uBO auto-update nuked my custom filters" → restore last week's manifest, the
-chunks are still in the store. Time-travel as a side effect of the
-architecture, not extra work.
+> **Superseded.** This bonus depended on keeping old manifests + chunks in a
+> durable store. The P2P pivot has **no durable store** (the user explicitly does
+> not want history — "we don't care about history as long as syncs keep things up
+> to date"), so rollback is **not** a v1 feature. It could return later behind the
+> same interface via an optional encrypted durable store. See
+> docs/transport-and-security.md §5.
 
 ## v1 scope decision: blob-level, not key-level
 
@@ -205,11 +221,14 @@ Abstract this behind one resolver; the rest of the code is OS-agnostic
 
 | | Linux | macOS |
 |---|---|---|
-| Firefox profile root | `~/.mozilla/firefox/` | `~/Library/Application Support/Firefox/` |
+| Firefox profile root | snap / flatpak / plain — probe in that order † | `~/Library/Application Support/Firefox/` |
 | (Chrome, later) | `~/.config/google-chrome/` | `~/Library/Application Support/Google/Chrome/` |
 
-Resolve the active profile by parsing `profiles.ini`, not by hardcoding a
-profile name.
+† Linux is **not** one path: an Ubuntu-default Firefox is a snap and its profile
+lives under `~/snap/firefox/common/.mozilla/firefox/`, not `~/.mozilla`. See
+DELTA 0 in docs/firefox-internals-verified.md; implemented in
+`internal/profile`. Resolve the active profile by parsing `profiles.ini`, not by
+hardcoding a profile name.
 
 ## Why Firefox first
 
@@ -231,18 +250,32 @@ non-Firefox-Sync coordination channel.
 ## Proposed package layout (Go)
 
 ```
-cmd/gusset/          main; version from git tag (see Versioning)
-internal/profile/    OS + browser path discovery, profiles.ini parser,
-                     prefs.js / uuids resolver
-internal/store/      Backend interface: Read(extID) -> blob, Write(extID, blob)
-  firefox.go         IDB sqlite reader + UUID->path resolution + sqlite-backup snapshot
+cmd/gusset/          main; version from git tag (see Versioning)        [done: version, doctor]
+internal/profile/    OS + browser path discovery, profiles.ini parser,  [done]
+                     prefs.js / uuids resolver (snap/flatpak/plain)
+internal/store/      Backend interface; Firefox snapshot + apply        [done: Snapshot; TODO: Apply]
+  firefox.go         IDB reader (by db name) + VACUUM-INTO snapshot +
+                     .files capture; Apply does UUID rewrite (DELTA 2)
   (chrome.go later)  leveldb
-internal/chunk/      FastCDC wrapper (restic/chunker), chunk store, manifest types
-internal/sync/       delta detection, queue, atomic apply, LWW conflict policy
-internal/transport/  Transport interface; git backend default
-extension/           companion WebExtension: manifest courier (storage.sync) + UI
-native-host/         native messaging host manifest + install helper
+internal/policy/     allowlist (empty default) + sensitive denylist     [TODO]
+                     (deny-with-override). See transport-and-security.md §3
+internal/crypto/     passphrase -> Argon2id -> K_enc/K_addr/peer-auth;  [TODO]
+                     AEAD chunk encryption, keyed content-addressing
+internal/chunk/      FastCDC wrapper (restic/chunker); keyed-hash +      [TODO]
+                     encrypt per chunk; manifest types
+internal/sync/       delta detection, atomic apply, LWW conflict policy [TODO]
+internal/transport/  Transport interface; v1 = p2p Tier-0 LAN-direct,   [TODO]
+                     signaled via storage.sync (NAT/relay tiers later)
+internal/status/     single status source; never-sync-silently model    [TODO]
+extension/           companion WebExtension: manifest + signaling        [TODO]
+                     courier (storage.sync), status UI, localhost-WS client
 ```
+
+Authoritative design for the data plane, encryption, policy, and status lives in
+**docs/transport-and-security.md**. The daemon↔extension channel is a **localhost
+WebSocket**, not native messaging (see DELTA 4 in
+docs/firefox-internals-verified.md) — so there is no `native-host/` package by
+default.
 
 The `store.Backend` interface keeps macOS/Linux *and* Firefox/Chrome
 differences from leaking past `internal/store` and `internal/profile`.
@@ -270,24 +303,44 @@ differences from leaking past `internal/store` and `internal/profile`.
   change can look like a large byte change and degrade the dedup ratio. Still
   strictly better than whole-file transfer, and the async queue makes a
   post-compaction re-sync a background non-event. Note it; don't over-engineer.
-- **Native messaging host install friction.** Registering the host is a
-  one-time per-machine step. Provide an install helper. This is the price of
-  using the supported Firefox Sync ride instead of the fragile disk hack.
-- **Concurrent-use safety.** Live snapshot via sqlite backup API should avoid
-  the "two browsers, one store" corruption class, but verify on a real profile
-  before trusting it. Fall back to build-on-quiesce if needed.
-- **Which extensions to sync.** Allowlist by extension ID, configured in the
-  companion extension UI. Don't sync everything blindly — some extensions store
-  device-specific tokens or absolute paths that shouldn't propagate.
+- ~~**Native messaging host install friction.**~~ **Resolved** — the
+  daemon↔extension channel is a localhost WebSocket, not native messaging, so
+  there is no host to register (DELTA 4, docs/firefox-internals-verified.md).
+- **Concurrent-use safety.** Live snapshot via `VACUUM INTO` reads the store
+  consistently while Firefox holds it open — verified on a live uBO store
+  (`internal/store`). Apply (the write side) still needs care: do not write a
+  store out from under a running Firefox; atomic swap + verify on a quiesced
+  target, or while the extension is idle.
+- **Which extensions to sync → settled as policy.** Opt-in allowlist (empty by
+  default) plus a **sensitive denylist with deny-with-override** for credential
+  managers. Device-specific tokens / absolute paths can't be stripped at
+  blob-level (that's the v2 key-level decoder), so allowlisting is a per-extension
+  judgement the user makes, with warnings. See docs/transport-and-security.md §3.
+- **P2P reachability is best-effort.** v1 assumes both machines online, usually
+  same-LAN. Cross-NAT (Tier 1) and relay (Tier 2) are deferred. Every
+  non-converged state is surfaced via status, never silent.
+- **Lost-device revocation.** A paired device holds the passphrase-derived key;
+  v1 revocation = rotate the passphrase everywhere. No forward secrecy. Noted,
+  not solved.
 
-## Immediate next steps
+## Progress & next steps
 
-1. Verify the five "VERIFY FIRST" assumptions against a live Firefox profile on
-   this machine (inspect `prefs.js`, the `storage/default/` tree, and a real
-   extension's IDB sqlite). This is reading, not building — cheap, and it
-   firms up everything downstream.
-2. Scaffold the Go module (`cmd/gusset`, `Makefile`, version plumbing,
-   `internal/profile` path resolver) — the part with no unknowns.
-3. Spike the Firefox IDB sqlite reader against a real uBO store (blob-level
-   read first; do not decode values).
-4. Stand up the companion extension as a manifest courier with a stub UI.
+**Done:**
+1. ✅ Verified the five "VERIFY FIRST" assumptions against a live snap Firefox
+   profile (+ Sync sign-in confirming the `extension-storage` engine).
+   docs/firefox-internals-verified.md.
+2. ✅ Scaffolded the Go module with house tooling + `internal/profile` resolver
+   (snap/flatpak/plain) + `gusset doctor`.
+3. ✅ `internal/store` Firefox **snapshot** path against the live uBO store
+   (VACUUM-INTO + `.files` capture, store identified by db name). 42 keys, 10
+   external files.
+
+**Next (build order from docs/transport-and-security.md §"build order"):**
+4. `internal/policy` — allowlist (empty default) + sensitive denylist
+   (deny-with-override).
+5. `internal/crypto` — passphrase → Argon2id → keys; AEAD; keyed addressing.
+6. `internal/chunk` — FastCDC (restic/chunker) → keyed-hash + encrypt per chunk.
+7. `internal/transport` — Tier-0 LAN-direct backend, signaled via `storage.sync`.
+8. `internal/store` **Apply** path (UUID rewrite, atomic swap).
+9. Status plumbing (`gusset status` + localhost WS JSON), then the companion
+   extension (manifest/signaling courier + status UI).

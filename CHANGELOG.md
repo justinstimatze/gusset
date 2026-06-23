@@ -19,3 +19,15 @@
   uBlock Origin store (skips cleanly when no profile is present).
 - Design: codified "Be a good Firefox Sync citizen" in HANDOFF.md — bulk data
   never rides `storage.sync`, no forced syncs or polling of Mozilla's servers.
+- Design pivot (docs/transport-and-security.md): the data plane moves from a
+  git/store-and-forward transport to **direct device-to-device** sync, signaled
+  through Firefox Sync. v1 transport is Tier-0 same-LAN direct (NAT traversal and
+  relay are later tiers). Chunks are encrypted with a key derived from a single
+  8-word passphrase; the transport only ever sees ciphertext. No transport
+  account, no server holding data, no durable history. Policy: opt-in allowlist
+  (empty default) + sensitive denylist (deny-with-override). New requirement:
+  never sync silently — every non-converged state carries a visible reason
+  (status surfaced via `gusset status`, localhost WS JSON, and the extension UI).
+- Notes: docs/agent-setup-and-extension-ui.md captures agent-driven setup (one
+  machine-readable status source for humans and agents alike) and the extension's
+  control-panel/status-dashboard UI.
