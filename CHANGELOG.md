@@ -31,3 +31,10 @@
 - Notes: docs/agent-setup-and-extension-ui.md captures agent-driven setup (one
   machine-readable status source for humans and agents alike) and the extension's
   control-panel/status-dashboard UI.
+- `internal/policy`: the safe-by-default sync gate. Opt-in allowlist (empty
+  default) + a built-in sensitive denylist (credential/2FA extensions) with
+  deny-with-override. Every `Evaluate` carries a human-readable reason.
+- `internal/crypto`: one passphrase → Argon2id → HKDF subkeys. XChaCha20-Poly1305
+  chunk encryption, HMAC-SHA256 keyed content-addressing, and label-scoped
+  `Subkey` derivation for peer auth. Keys are reproducible across machines from
+  the passphrase alone (fixed app salt; per-user random salt supported).
