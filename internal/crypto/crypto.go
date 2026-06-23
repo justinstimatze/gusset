@@ -112,6 +112,15 @@ func (k *Keys) Subkey(label string, n int) ([]byte, error) {
 	return out, nil
 }
 
+// Stream returns a deterministic keystream reader derived from the master key
+// under label, for callers needing key-seeded randomness — e.g. deriving a
+// per-user chunker polynomial so chunk boundaries are deterministic across the
+// user's own machines but not globally predictable. The reader yields up to
+// maxHKDFOut bytes before EOF, which is ample for polynomial derivation.
+func (k *Keys) Stream(label string) io.Reader {
+	return hkdf.New(sha256.New, k.master, nil, []byte(label))
+}
+
 // Address returns the keyed content address of data: HMAC-SHA256(K_addr, data),
 // hex-encoded. Keyed (not a bare hash) so identical plaintext is not a global
 // confirmation oracle and is not linkable across users; dedup within the user's

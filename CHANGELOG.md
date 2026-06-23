@@ -48,3 +48,11 @@
   - **L2** — policy gains `EvaluateNamed` + `LooksSensitiveName`: a name
     heuristic that deny-with-overrides credential-looking extensions not on the
     built-in denylist.
+- `internal/chunk`: content-defined chunking (restic/chunker / FastCDC) →
+  per-chunk keyed addressing + AEAD, plus signed manifest types. The chunker
+  polynomial is derived per-user from the key (`crypto.Stream`), so boundaries
+  are deterministic across the user's machines (dedup works) but not globally
+  predictable. `Reconstruct` enforces the M2 invariant (open with address-AAD +
+  re-verify address) and the manifest carries a keyed signature so reordering or
+  dropping chunks is detected. `Missing` supports resumable, fetch-only-what's-
+  absent transfer.

@@ -3,6 +3,7 @@ module github.com/justinstimatze/gusset
 go 1.26.0
 
 require (
+	github.com/restic/chunker v0.4.0
 	golang.org/x/crypto v0.53.0
 	modernc.org/sqlite v1.53.0
 )
