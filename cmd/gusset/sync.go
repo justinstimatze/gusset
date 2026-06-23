@@ -18,6 +18,7 @@ import (
 	"github.com/justinstimatze/gusset/internal/converge"
 	"github.com/justinstimatze/gusset/internal/crypto"
 	"github.com/justinstimatze/gusset/internal/discovery"
+	"github.com/justinstimatze/gusset/internal/ffctl"
 	"github.com/justinstimatze/gusset/internal/policy"
 	"github.com/justinstimatze/gusset/internal/profile"
 	"github.com/justinstimatze/gusset/internal/status"
@@ -41,6 +42,8 @@ func syncCmd(args []string) error {
 	peerAddr := fs.String("peer", "", "dial this host:port directly, skipping mDNS discovery")
 	extCSV := fs.String("extensions", "", "comma-separated extension IDs to sync (the allowlist)")
 	overrideCSV := fs.String("override", "", "comma-separated sensitive extension IDs to force-enable")
+	restartFF := fs.Bool("restart-firefox", false, "close Firefox to apply, then relaunch it (destructive: closes your browser)")
+	ffBin := fs.String("firefox-bin", "firefox", "Firefox binary to relaunch with --restart-firefox")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -70,6 +73,22 @@ func syncCmd(args []string) error {
 	if err != nil {
 		return err
 	}
+
+	// Opt-in: close Firefox up front so incoming settings apply cleanly, and
+	// relaunch it when the run ends. Only acts if Firefox is actually running.
+	if *restartFF {
+		if *watch {
+			fmt.Fprintln(os.Stderr, "note: --restart-firefox with --watch keeps Firefox closed for the whole session.")
+		}
+		stopped, serr := ffctl.Stop(profDir, 30*time.Second)
+		if serr != nil {
+			fmt.Fprintf(os.Stderr, "restart-firefox: %v\n", serr)
+		} else if stopped {
+			fmt.Println("Closed Firefox to apply incoming settings; will relaunch when done.")
+			defer relaunchFirefox(*ffBin)
+		}
+	}
+
 	pl := buildPolicy(cfg, *extCSV, *overrideCSV)
 	allow := func(extID string) bool { return pl.Evaluate(extID).Allowed }
 
@@ -147,6 +166,16 @@ func syncCmd(args []string) error {
 	return nil
 }
 
+// relaunchFirefox restarts Firefox after a --restart-firefox run; on failure it
+// tells the user to reopen it themselves (their session restores either way).
+func relaunchFirefox(bin string) {
+	if err := ffctl.Launch(bin); err != nil {
+		fmt.Fprintf(os.Stderr, "couldn't relaunch Firefox (%v); reopen it yourself — your session restores.\n", err)
+		return
+	}
+	fmt.Println("Relaunched Firefox.")
+}
+
 // applyBanner prints the action the user must take after a run. Firefox loads
 // storage.local at startup, so applied settings need a restart to take effect,
 // and a profile that was running could not be written at all — both are stated
@@ -167,7 +196,7 @@ func applyBanner(outcomes []converge.Outcome) {
 	}
 	if locked > 0 {
 		fmt.Printf("\n⚠ Firefox is running, so %d extension(s) could not be applied.\n"+
-			"  Close Firefox on this machine, re-run `gusset sync`, then reopen it.\n", locked)
+			"  Close Firefox and re-run, or re-run with --restart-firefox to do it automatically.\n", locked)
 	}
 }
 

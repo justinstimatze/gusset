@@ -101,6 +101,17 @@
   the socket, fetches the catalog via opOffer, pulls the chunks, and applies all
   42 keys re-homed onto its own UUID — the full networked path the pipe tests
   cannot exercise.
+- `internal/ffctl` + `gusset sync --restart-firefox`: opt-in "close and reopen
+  Firefox for you." Applying incoming settings needs Firefox not running (it
+  locks the profile and caches the store in memory), so this stops the exact
+  Firefox holding the target profile — the PID is read straight from the `lock`
+  symlink target, not guessed — waits for a clean shutdown, lets the run apply,
+  then relaunches it (detached, so the session restores). Conservative by design:
+  it sends SIGTERM (never SIGKILL — a clean exit flushes the store and saves the
+  session), and refuses to signal a PID it cannot confirm is Firefox via
+  `/proc/<pid>/{comm,cmdline}` — verified in practice when it declined to kill a
+  recycled PID behind a stale lock. Off by default; closing the browser is
+  destructive, so it only runs when the user passes the flag. Linux for v1.
 - Receiver activation is now communicated clearly. Firefox loads `storage.local`
   at startup and locks the profile while running, so applying incoming settings
   has two user-visible preconditions, both stated plainly rather than left as a

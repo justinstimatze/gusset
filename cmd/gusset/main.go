@@ -107,6 +107,7 @@ usage:
     --for 10m          stay reachable for a bounded window, then exit (default 30s)
     --watch            stay reachable indefinitely (until Ctrl-C)
     --peer host:port   dial a peer directly, skipping mDNS discovery
+    --restart-firefox  close Firefox to apply, then relaunch it (closes your browser)
   passphrase comes from GUSSET_PASSPHRASE_FILE (a path) or GUSSET_PASSPHRASE.
 `)
 }
