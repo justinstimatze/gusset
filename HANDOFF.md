@@ -367,8 +367,16 @@ differences from leaking past `internal/store` and `internal/profile`.
     honestly and shows the empty model). Decoupled from transport — the daemon
     bridges `transport.ConnError` (PhaseHandshake → `auth-failed`).
 
-**Next:**
-11. The companion **extension** + localhost **WS** server: the daemon serves the
+11. ✅ `internal/discovery` + `internal/converge` + **`gusset sync`** — v1's
+    primary surface (transport §8). mDNS LAN rendezvous (`_gusset._tcp`),
+    reconcile (BuildOffer/Pull, LWW), and the on-demand `sync` command with
+    `--for`/`--watch`/`--peer` lifetimes. No daemon, no extension, no Firefox
+    Sync. Reconcile verified end-to-end over a pipe against a live store; command
+    smoke-tested (offer built, listener up, mDNS advertised, status rendered).
+    Apply still needs Firefox closed on the receiver (`ErrProfileLocked`).
+
+**Next (Tier 1 / opt-in, later):**
+11b. The companion **extension** + localhost **WS** server: the daemon serves the
     status `Snapshot` as JSON over the WS the extension reads, and the extension
     is the signaling courier (publishes/reads each device's endpoint + pubkey via
     `storage.sync` — item 9's remaining adapter) and the status-grid UI.

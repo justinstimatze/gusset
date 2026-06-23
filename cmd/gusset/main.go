@@ -70,6 +70,8 @@ func main() {
 		err = doctor()
 	case "status":
 		err = statusCmd()
+	case "sync":
+		err = syncCmd(args[1:])
 	default:
 		fmt.Fprintf(os.Stderr, "gusset: unknown command %q\n", args[0])
 		usage()
@@ -88,6 +90,15 @@ usage:
   gusset version    print the build version
   gusset doctor     resolve the active Firefox profile and list installed extensions
   gusset status     report sync status (peers and per-extension state, with reasons)
+  gusset sync       sync allowlisted extensions with a LAN peer (on-demand; see --help)
+
+  gusset sync flags:
+    --extensions a,b   extension IDs to sync (the opt-in allowlist)
+    --override a,b     force-enable sensitive (denylisted) extension IDs
+    --for 10m          stay reachable for a bounded window, then exit (default 30s)
+    --watch            stay reachable indefinitely (until Ctrl-C)
+    --peer host:port   dial a peer directly, skipping mDNS discovery
+  passphrase comes from GUSSET_PASSPHRASE_FILE (a path) or GUSSET_PASSPHRASE.
 `)
 }
 

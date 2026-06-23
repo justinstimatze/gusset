@@ -66,6 +66,32 @@
   store can be re-homed onto a machine where the origin dir does not yet exist.
   Verified end-to-end: a live uBO snapshot applies onto a synthetic profile with
   a different UUID, data intact.
+- `internal/discovery`: LAN rendezvous over mDNS (`_gusset._tcp`). `Advertise`
+  announces this device's transport listener (returning a stop func so the
+  announcement lives only as long as the sync window — the §8 privacy posture);
+  `Browse` finds peers, skips self, and returns dialable `host:port`. mDNS only
+  announces presence; who may connect is still gated by the passphrase-derived
+  mutual TLS. Pure-Go (`grandcat/zeroconf`), so `CGO_ENABLED=0` holds.
+- `internal/converge`: the reconcile layer `gusset sync` runs. `BuildOffer`
+  snapshots+exports each allowlisted extension into one `transport.StaticSource`
+  (union of encrypted chunks + a JSON catalog of per-extension manifests) plus
+  the local catalog; `Pull` fetches a peer's catalog, and for each extension it
+  offers that is allowlisted locally and strictly newer (LWW), reconstructs and
+  applies it. Per-extension apply failures are reported, not fatal, so one bad
+  extension does not abort the run. Kept free of policy/discovery (takes an
+  `allow` predicate and a connection), so it unit-tests over an in-memory pipe;
+  verified end-to-end against a live uBO store (offer → serve → pull → apply onto
+  a different-UUID target), plus the LWW-skip and not-allowlisted-blocked paths.
+- `gusset sync`: the on-demand sync command (docs/transport-and-security.md §8).
+  Serves this device's allowlisted extensions and pulls a peer's newer ones over
+  passphrase-authed mutual TLS, discovered on the LAN by mDNS (or `--peer
+  host:port` direct). Listener lifetime is the user's choice: a default one-shot
+  window, `--for D` (bounded setup window), or `--watch` (indefinite, until
+  Ctrl-C) — nobody is forced into an always-on process. Allowlist via
+  `--extensions` (+ `--override` for sensitive ones); passphrase from
+  `GUSSET_PASSPHRASE_FILE` or `GUSSET_PASSPHRASE`. Reconcile outcomes render
+  through `internal/status` as an end-of-run summary, so every peer and extension
+  carries a reason. v1 needs no daemon, no extension, and no Firefox Sync.
 - `internal/status`: the single status source behind the never-sync-silently
   rule (docs/transport-and-security.md §6). A concurrency-safe model of paired
   peers (`discovering → … → connected(lan) | unreachable(reason)`) and
