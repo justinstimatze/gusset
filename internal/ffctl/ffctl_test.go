@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 )
@@ -124,6 +125,25 @@ func TestClearStale_LeavesUnparseableLock(t *testing.T) {
 	}
 	if _, err := os.Lstat(lock); err != nil {
 		t.Fatal("unparseable lock should have been left in place")
+	}
+}
+
+// TestProcessStrings_FindsSelf exercises the OS-specific process lookup against
+// the test binary's own PID. It runs whichever seam the build selected (/proc on
+// Linux, ps on macOS), so it validates the darwin and linux implementations the
+// same way. The current process exists, so the lookup must return something that
+// names this test binary, and must not be mistaken for Firefox.
+func TestProcessStrings_FindsSelf(t *testing.T) {
+	got := processStrings(os.Getpid())
+	if len(got) == 0 {
+		t.Fatal("processStrings returned nothing for the running test process")
+	}
+	joined := strings.ToLower(strings.Join(got, " "))
+	if !strings.Contains(joined, "ffctl") && !strings.Contains(joined, "test") {
+		t.Errorf("process strings %q name neither the package nor a test binary", got)
+	}
+	if looksLikeFirefox(os.Getpid()) {
+		t.Error("the test binary was misidentified as Firefox")
 	}
 }
 

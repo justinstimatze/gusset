@@ -5,7 +5,16 @@
 // relaunches it afterward. It is deliberately conservative: it signals only a
 // process it has confirmed is Firefox, sends SIGTERM (never SIGKILL — a clean
 // shutdown flushes the store and saves the session), and never runs unless the
-// user opts in. Linux-focused for v1.
+// user opts in.
+//
+// Linux and macOS are supported; the two OS-specific seams (how a PID is
+// identified as Firefox, and the default relaunch binary) live in
+// ffctl_linux.go / ffctl_darwin.go. The lock-symlink handling is shared: it is
+// verified against a live Linux profile, and degrades safely elsewhere — if a
+// platform has no parseable "lock" symlink (e.g. macOS may lock via a
+// .parentlock fcntl lock instead), os.Readlink reports "not running", so Stop
+// becomes a no-op and the user simply closes Firefox by hand, exactly as without
+// --restart-firefox. See docs/firefox-internals-verified.md (macOS — UNVERIFIED).
 package ffctl
 
 import (
@@ -140,14 +149,12 @@ func ClearStale(profileDir string) (cleared bool, err error) {
 }
 
 // looksLikeFirefox checks the process command so a misparsed or recycled PID is
-// never signaled by mistake. It reads /proc/<pid>/comm and /proc/<pid>/cmdline.
+// never signaled by mistake. The OS-specific lookup (processStrings) is in
+// ffctl_linux.go / ffctl_darwin.go; the "firefox" match is shared so the safety
+// guard behaves identically on both.
 func looksLikeFirefox(pid int) bool {
-	for _, f := range []string{"comm", "cmdline"} {
-		b, err := os.ReadFile(fmt.Sprintf("/proc/%d/%s", pid, f))
-		if err != nil {
-			continue
-		}
-		if strings.Contains(strings.ToLower(string(b)), "firefox") {
+	for _, s := range processStrings(pid) {
+		if strings.Contains(strings.ToLower(s), "firefox") {
 			return true
 		}
 	}
@@ -189,11 +196,11 @@ func Stop(profileDir string, timeout time.Duration) (stopped bool, err error) {
 
 // Launch starts Firefox detached so it survives the gusset process and restores
 // the session after a clean shutdown. binary is the Firefox command (default
-// "firefox" on PATH); extra args (e.g. "--profile", dir) may be passed for a
-// non-default profile.
+// defaultFirefoxBinary() for the current OS); extra args (e.g. "--profile", dir)
+// may be passed for a non-default profile.
 func Launch(binary string, args ...string) error {
 	if binary == "" {
-		binary = "firefox"
+		binary = defaultFirefoxBinary()
 	}
 	cmd := exec.Command(binary, args...)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true} // detach from gusset's session

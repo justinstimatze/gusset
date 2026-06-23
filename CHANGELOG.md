@@ -144,6 +144,15 @@
     race; an unparseable lock is left untouched. `gusset sync` clears a stale
     lock automatically (provably safe — `store.Apply` independently re-checks the
     lock as a backstop), and `gusset doctor` now reports lock status.
+  - macOS support: the two OS-specific seams (identifying a PID as Firefox, and
+    the default relaunch binary) move into build-tagged `ffctl_linux.go` /
+    `ffctl_darwin.go`. The darwin build identifies processes via `ps` (there is no
+    `/proc`) and defaults to `/Applications/Firefox.app/Contents/MacOS/firefox`.
+    Cross-compiles clean (`GOOS=darwin go build ./...`); the lock-symlink handling
+    degrades safely where macOS may instead use a `.parentlock` fcntl lock (no
+    parseable symlink → "not running" → `--restart-firefox` falls back to a manual
+    close, never a wrong signal). The one fact that needs a live Mac to confirm is
+    documented under "macOS — UNVERIFIED" in `docs/firefox-internals-verified.md`.
 - Receiver activation is now communicated clearly. Firefox loads `storage.local`
   at startup and locks the profile while running, so applying incoming settings
   has two user-visible preconditions, both stated plainly rather than left as a

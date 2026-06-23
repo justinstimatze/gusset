@@ -229,6 +229,39 @@ snapshot path. Don't forget to snapshot the `.files/` dir at the same instant
 
 ---
 
+## macOS — UNVERIFIED (no Mac on hand; verified facts are Linux-only)
+
+Everything above was verified against a **live Linux (snap) profile**. The macOS
+support added to `internal/profile` and `internal/ffctl` is built from Mozilla
+source knowledge and cross-compiles clean (`GOOS=darwin go build ./...`), but has
+**not** been run against a live macOS Firefox. What is and isn't certain:
+
+- **Profile root** — `~/Library/Application Support/Firefox/` is well-established
+  and already the darwin branch in `profile.firefoxRootCandidates`. Confidence:
+  high. `profiles.ini`, `prefs.js`, the `extensions.webextensions.uuids` pref, and
+  the `storage/default/moz-extension+++<UUID>…` layout are cross-platform Gecko
+  internals, not OS-specific — the same code resolves them.
+- **Process identity** (`ffctl.processStrings`) — `/proc` does not exist on macOS,
+  so the darwin build shells out to `ps -p <pid> -o comm=,command=`. Confidence:
+  high (POSIX `ps`), but the exact column output should be eyeballed once on a Mac.
+- **Profile lock** — this is the one genuinely unverified fact. On Linux the lock
+  is a `lock` **symlink** with target `<ip>:+<pid>` (nsProfileLock). macOS Firefox
+  may instead (or additionally) use a `.parentlock` **fcntl** lock with no
+  parseable symlink. `ffctl` reads only the `lock` symlink, so the macOS outcomes
+  are: (a) if a `lock` symlink exists, `parseLockPID` takes the PID after the last
+  `+` and works regardless of whether the prefix is an IP or a MAC; (b) if there is
+  no `lock` symlink, `os.Readlink` returns ENOENT → "not running" → `Stop` is a
+  no-op and `--restart-firefox` degrades to "please close Firefox yourself",
+  identical to not passing the flag. **Both outcomes are safe** — the failure mode
+  is reduced convenience, never a wrong SIGTERM (the `looksLikeFirefox` guard still
+  gates every signal). The open question for a live-Mac check: *does macOS Firefox
+  write a parseable `lock` symlink?* If not and auto-restart on macOS is wanted, add
+  a `.parentlock`-aware holder lookup to the darwin build.
+- **Relaunch binary** (`ffctl.defaultFirefoxBinary`) — darwin defaults to
+  `/Applications/Firefox.app/Contents/MacOS/firefox` (the inner binary forwards
+  `--profile`/`--new-instance`, unlike `open -a Firefox`). Overridable with
+  `--firefox-bin` for non-standard install locations.
+
 ## Net effect on the package layout
 
 - `internal/profile/` — profile-root probe must handle snap/flatpak/plain (DELTA
