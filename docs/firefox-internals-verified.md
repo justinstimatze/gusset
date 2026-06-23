@@ -179,6 +179,13 @@ friction point; weekend-eating to debug.
 
 ### DECISION — avoid native messaging; use a localhost socket instead
 
+> **Superseded for v1** by docs/transport-and-security.md §8: v1 has no
+> persistent daemon and no companion extension on the data path. It is the
+> on-demand `gusset sync` binary, discovered on the LAN by mDNS. The
+> user-service daemon + localhost-WS-to-extension below return only at Tier 1
+> (cross-network) and as an opt-in for set-and-forget. The native-messaging
+> snap-path analysis here still applies *if* that optional fallback is built.
+
 Don't make native messaging the daemon↔extension channel. Instead:
 
 - Run the daemon as a normal **user service** (systemd `--user` / launchd),

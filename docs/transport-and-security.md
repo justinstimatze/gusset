@@ -185,6 +185,56 @@ is not converging, `gusset status` names the reason.
 - The v1 blob-level "treat as opaque" stance helps: gusset never parses or
   inspects the secrets it moves.
 
+## 8. Daemon lifetime — on-demand by default
+
+gusset is **one binary with a caller-chosen lifetime**, not a mandatory
+background service. The "daemon" is not a separate program; it is `gusset sync`
+told to *stay reachable* instead of *sync once and exit*. The same transport,
+reconcile, and status code runs in every mode — only how long the listener stays
+open changes. This means the privacy-conscious path is the default, and nobody
+is forced into a resident process.
+
+**Three lifetimes:**
+
+| invocation | behavior | for |
+|---|---|---|
+| `gusset sync` | advertise + browse mDNS, converge with any peer that appears within a short grace, then **exit** | the default — run it on both machines, it syncs, it's gone |
+| `gusset sync --for D` | hold the listener open for a bounded **setup window** (e.g. `--for 10m`), serving and syncing, then exit | one-time setup / onboarding a new machine; convenience of a daemon with a guaranteed end |
+| `gusset sync --watch` | stay reachable indefinitely (optionally under `systemd --user` / launchd) | opt-in set-and-forget only |
+
+`--peer host:port` skips mDNS and dials a named address (manual rendezvous).
+
+**Why on-demand is the stronger security/privacy posture** (the reason it is the
+default, not just an option):
+
+- The **listening socket and mDNS advertisement exist only during the window** —
+  no persistent open port for other local processes to probe, no always-on
+  service to compromise.
+- **Key material lives only for the run.** The passphrase → Argon2id derivation
+  happens per-invocation (a few hundred ms), so decryption-capable keys are not
+  resident in a long-lived process's memory between syncs.
+- **Nothing auto-starts and nothing touches `storage.local` unless invoked.**
+  "Never sync silently" (§6) sharpens to "never sync unless you ran it";
+  `--for`/`--watch` are an explicit, opt-in escalation, never the default.
+
+The `--for` window is the sweet spot for one-time setup: the convenience of a
+daemon (the peer can connect whenever it is ready during the window) with the
+bounded lifetime of a one-shot (guaranteed gone afterward — no residue).
+
+**Supersedes the DELTA 4 "run as a user service" default for v1.** That default
+(docs/firefox-internals-verified.md) assumed a persistent daemon reached over a
+localhost WS by the extension. v1 instead is the on-demand binary above,
+discovered on the LAN by **mDNS** (`_gusset._tcp`), so it needs no always-on
+service, no localhost WS, no companion extension, and no Firefox Sync — peer auth
+still comes from the passphrase (§2). The companion extension + Firefox-Sync
+signaling move to **Tier 1** (cross-network rendezvous, where mDNS cannot reach);
+the user-service daemon stays as an opt-in for set-and-forget.
+
+**Apply still needs Firefox closed on the receiving side** (`store.Apply` refuses
+a locked profile — DELTA 2 / `ErrProfileLocked`). A one-shot run surfaces this
+immediately and legibly; snapshotting the source works with Firefox open, only
+the write does not.
+
 ## Build order implied by this design
 
 1. `internal/policy` — allowlist (empty default) + sensitive denylist
@@ -193,10 +243,16 @@ is not converging, `gusset status` names the reason.
    keyed addressing.
 3. `internal/chunk` — FastCDC (restic/chunker) → keyed-hash + encrypt per chunk;
    manifest types.
-4. `internal/transport` — `Transport` interface + **Tier 0 LAN-direct** backend
-   (Sync-signaling adapter for endpoint exchange, mutual-TLS dial, peer-auth
-   from the passphrase keypair). Tiers 1–2 (STUN/ICE, relay) are later.
-5. `internal/store` Apply path — finish the other half (UUID rewrite, atomic
-   swap).
-6. Status plumbing — a single status source surfaced via `gusset status`, the
-   localhost WS, and the extension UI.
+4. `internal/transport` — **Tier 0 LAN-direct** backend: pinned mutual-TLS
+   (peer-auth from the passphrase keypair) + the chunk request/response protocol.
+   Tiers 1–2 (STUN/ICE via Firefox-Sync signaling, relay) are later. ✅ done.
+5. `internal/store` Apply path — UUID rewrite + atomic swap. ✅ done.
+6. Status plumbing — `internal/status`, a single source rendered by `gusset
+   status` (and, at Tier 1, the WS + extension UI). ✅ done.
+7. **`internal/discovery` + `gusset sync`** — mDNS advertise/browse for LAN
+   rendezvous, and the on-demand `sync` command (§8) wiring discover → mutual-TLS
+   connect → exchange manifests → pull-missing → apply → report, with
+   `--for`/`--watch`/`--peer` selecting the listener lifetime. This is v1's
+   primary surface; no daemon, extension, or Firefox Sync required.
+8. (Tier 1, later) Firefox-Sync signaling + companion extension for cross-network
+   rendezvous and a status-grid UI; opt-in user-service daemon for set-and-forget.
