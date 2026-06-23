@@ -57,6 +57,11 @@ const (
 	Stale   SyncState = "stale"
 	Blocked SyncState = "blocked"
 	Errored SyncState = "error"
+	// Pending: the data is fetched and on disk but not yet live — it needs a
+	// local action to activate (Firefox loads storage.local at startup, so an
+	// applied change needs a restart, and a change that could not be applied
+	// because Firefox is running needs it closed and the sync re-run).
+	Pending SyncState = "pending"
 )
 
 // Peer is a paired device's status.

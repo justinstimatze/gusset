@@ -144,6 +144,33 @@ func TestPull_LocalNewerSkips(t *testing.T) {
 	}
 }
 
+// TestPull_LockedWhenFirefoxRunning confirms that a peer-newer extension whose
+// apply is blocked by a running Firefox (lock present) is reported as Locked,
+// distinct from a generic error — so the command can tell the user to close
+// Firefox and re-run rather than surfacing a cryptic failure.
+func TestPull_LockedWhenFirefoxRunning(t *testing.T) {
+	src := liveSource(t)
+	k, pol := keysAndPoly(t)
+	offer, _, err := BuildOffer(src, k, pol, []string{uBOID}, t.TempDir(), 2_000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := servePipe(t, offer)
+
+	targetDir := newTargetProfile(t, uBOID)
+	if err := os.WriteFile(filepath.Join(targetDir, "lock"), []byte("running"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	target := store.NewFirefox(targetDir)
+	outcomes, err := Pull(client, target, k, Catalog{}, func(string) bool { return true }, t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(outcomes) != 1 || outcomes[0].Action != Locked {
+		t.Fatalf("expected locked, got %+v", outcomes)
+	}
+}
+
 // TestPull_BlockedWhenNotAllowed confirms an un-allowlisted extension the peer
 // offers is reported Blocked and not applied.
 func TestPull_BlockedWhenNotAllowed(t *testing.T) {

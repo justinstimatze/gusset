@@ -126,16 +126,42 @@ func syncCmd(args []string) error {
 	target := store.NewFirefox(profDir)
 	pullDeps := pullContext{id: id, target: target, k: k, localCat: localCat, allow: allow, workDir: workDir, model: model}
 
+	var outcomes []converge.Outcome
 	if *peerAddr != "" {
-		pullFrom(*peerAddr, *peerAddr, pullDeps)
+		outcomes = pullFrom(*peerAddr, *peerAddr, pullDeps)
 		<-ctx.Done() // linger so the peer can pull from us within the window
 	} else {
-		runDiscoveryLoop(ctx, host, pullDeps)
+		outcomes = runDiscoveryLoop(ctx, host, pullDeps)
 	}
 
 	fmt.Println()
 	status.Render(os.Stdout, model.Snapshot(), time.Now().Unix())
+	applyBanner(outcomes)
 	return nil
+}
+
+// applyBanner prints the action the user must take after a run. Firefox loads
+// storage.local at startup, so applied settings need a restart to take effect,
+// and a profile that was running could not be written at all — both are stated
+// plainly rather than left implicit in the status grid.
+func applyBanner(outcomes []converge.Outcome) {
+	var applied, locked int
+	for _, o := range outcomes {
+		switch o.Action {
+		case converge.Applied:
+			applied++
+		case converge.Locked:
+			locked++
+		}
+	}
+	if applied > 0 {
+		fmt.Printf("\n✓ Applied new settings for %d extension(s) on this machine.\n"+
+			"  Restart Firefox here to load them — they are on disk but not yet live.\n", applied)
+	}
+	if locked > 0 {
+		fmt.Printf("\n⚠ Firefox is running, so %d extension(s) could not be applied.\n"+
+			"  Close Firefox on this machine, re-run `gusset sync`, then reopen it.\n", locked)
+	}
 }
 
 // pullContext bundles what pullFrom needs, to keep the signature small.
@@ -150,9 +176,10 @@ type pullContext struct {
 }
 
 // runDiscoveryLoop browses for peers until the lifetime ends, pulling from each
-// newly-seen peer once. The server keeps running throughout, so peers can pull
-// from us concurrently.
-func runDiscoveryLoop(ctx context.Context, host string, deps pullContext) {
+// newly-seen peer once, and returns the accumulated reconcile outcomes. The
+// server keeps running throughout, so peers can pull from us concurrently.
+func runDiscoveryLoop(ctx context.Context, host string, deps pullContext) []converge.Outcome {
+	var all []converge.Outcome
 	handled := map[string]bool{}
 	for ctx.Err() == nil {
 		peers, err := discovery.Browse(ctx, host, browseGrace)
@@ -164,14 +191,16 @@ func runDiscoveryLoop(ctx context.Context, host string, deps pullContext) {
 				continue
 			}
 			handled[p.Addr] = true
-			pullFrom(p.Addr, p.Instance, deps)
+			all = append(all, pullFrom(p.Addr, p.Instance, deps)...)
 		}
 	}
+	return all
 }
 
-// pullFrom dials one peer, reconciles, and records the outcome in the status
-// model so the end-of-run summary explains every extension and peer.
-func pullFrom(addr, name string, deps pullContext) {
+// pullFrom dials one peer, reconciles, records the outcome in the status model
+// (so the end-of-run grid explains every extension and peer), and returns the
+// outcomes for the apply-action banner.
+func pullFrom(addr, name string, deps pullContext) []converge.Outcome {
 	now := time.Now().Unix()
 	client, err := transport.Dial("tcp", addr, deps.id)
 	if err != nil {
@@ -179,7 +208,7 @@ func pullFrom(addr, name string, deps pullContext) {
 			DeviceID: name, State: status.Unreachable,
 			Reason: status.PeerOffline, Detail: err.Error(), Since: now,
 		})
-		return
+		return nil
 	}
 	defer func() { _ = client.Close() }()
 	deps.model.SetPeer(status.Peer{DeviceID: name, State: status.Connected, Link: status.LinkLAN, Since: now})
@@ -190,21 +219,30 @@ func pullFrom(addr, name string, deps pullContext) {
 			DeviceID: name, State: status.Unreachable,
 			Reason: status.AuthFailed, Detail: err.Error(), Since: now,
 		})
-		return
+		return nil
 	}
 	for _, o := range outcomes {
 		deps.model.SetExtSync(toExtSync(o, name, now))
 	}
+	return outcomes
 }
 
 // toExtSync maps a reconcile Outcome onto a status entry.
 func toExtSync(o converge.Outcome, peer string, now int64) status.ExtSync {
 	e := status.ExtSync{Extension: o.Extension, DeviceID: peer, Since: now, Detail: o.Detail}
 	switch o.Action {
-	case converge.Applied, converge.LocalNewer:
+	case converge.Applied:
+		// On disk but not live until Firefox restarts.
+		e.State = status.Pending
+		e.Detail = "restart Firefox to load"
+	case converge.LocalNewer:
 		e.State = status.InSync
 	case converge.Blocked:
 		e.State = status.Blocked
+	case converge.Locked:
+		// Fetched and verified, just not applied — Firefox is running.
+		e.State = status.Pending
+		e.Detail = "close Firefox and re-run to apply"
 	default:
 		e.State = status.Errored
 	}

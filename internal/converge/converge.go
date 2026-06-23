@@ -9,6 +9,7 @@ package converge
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/justinstimatze/gusset/internal/chunk"
@@ -58,6 +59,7 @@ const (
 	Applied    Action = "applied"     // pulled the peer's newer version and applied it
 	LocalNewer Action = "local-newer" // ours is newer or equal; nothing to pull
 	Blocked    Action = "blocked"     // peer offers it but it is not allowlisted locally
+	Locked     Action = "locked"      // pulled but could not apply: Firefox is running
 	Failed     Action = "error"       // pull or apply failed; local state untouched
 )
 
@@ -98,6 +100,14 @@ func Pull(client *transport.Client, target *store.Firefox, k *crypto.Keys, local
 			outcomes = append(outcomes, Outcome{ext, LocalNewer, ""})
 		default:
 			if err := syncx.Import(target, pm, k, client.Get, workDir); err != nil {
+				// A locked profile is a precondition the user can fix (close
+				// Firefox), not a failure of the sync — report it distinctly so
+				// the command can give clear restart guidance. The data was
+				// fetched and verified; only the on-disk apply was deferred.
+				if errors.Is(err, store.ErrProfileLocked) {
+					outcomes = append(outcomes, Outcome{ext, Locked, "Firefox is running on this machine"})
+					continue
+				}
 				outcomes = append(outcomes, Outcome{ext, Failed, err.Error()})
 				continue
 			}

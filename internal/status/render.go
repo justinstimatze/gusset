@@ -44,6 +44,11 @@ func ExtWhy(e ExtSync) string {
 		return withDetail(strconv.Itoa(e.Remaining)+" chunks left to pull", e.Detail)
 	case Stale:
 		return withDetail("peer offline", e.Detail)
+	case Pending:
+		if e.Detail == "" {
+			return "restart Firefox to apply"
+		}
+		return e.Detail
 	case Blocked:
 		if e.Detail == "" {
 			return "denylisted (override to sync anyway)"

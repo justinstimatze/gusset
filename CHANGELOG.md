@@ -82,6 +82,16 @@
   `allow` predicate and a connection), so it unit-tests over an in-memory pipe;
   verified end-to-end against a live uBO store (offer → serve → pull → apply onto
   a different-UUID target), plus the LWW-skip and not-allowlisted-blocked paths.
+- Receiver activation is now communicated clearly. Firefox loads `storage.local`
+  at startup and locks the profile while running, so applying incoming settings
+  has two user-visible preconditions, both stated plainly rather than left as a
+  raw error: (a) after a successful apply, `gusset sync` prints "restart Firefox
+  here to load them — on disk but not yet live"; (b) when the receiver's Firefox
+  is running, the apply is reported as a distinct `converge.Locked` outcome (the
+  data was fetched and verified; only the on-disk write was deferred) and the
+  command prints "close Firefox, re-run, then reopen it". Both render in the
+  status grid as a new `status.Pending` state (data on disk, action needed to go
+  live) rather than as `in-sync` or `error`.
 - `gusset sync`: the on-demand sync command (docs/transport-and-security.md §8).
   Serves this device's allowlisted extensions and pulls a peer's newer ones over
   passphrase-authed mutual TLS, discovered on the LAN by mDNS (or `--peer

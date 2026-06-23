@@ -91,6 +91,7 @@ func TestNeverSilent(t *testing.T) {
 		{State: Pulling, Remaining: 2},
 		{State: Stale},
 		{State: Blocked},
+		{State: Pending},
 		{State: Errored}, // missing detail -> loud fallback
 	}
 	for _, e := range nonConvergedExts {
