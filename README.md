@@ -17,9 +17,17 @@ for the load-bearing internals, verified against a live profile.
 
 ## Status
 
-Early. The build tooling and the Firefox profile resolver
-(`internal/profile`) are in place; the store, chunker, transport, sync engine,
-and companion extension are not yet built.
+Working CLI; no companion extension yet. The full local pipeline is in place —
+profile resolver, store snapshot+apply (UUID re-homing), policy allowlist,
+passphrase crypto, content-defined chunking, and the device-to-device transport
+(Tier-0 LAN-direct over passphrase-derived mutual TLS). `gusset sync` syncs
+allowlisted extensions between two machines, finding each other by mDNS on the
+same network, or — across networks — by trading sealed beacons through a shared
+folder (`--rendezvous-dir`, Tier 1). Runs on Linux and macOS.
+
+Not yet built: the companion WebExtension (which will carry beacons over Firefox
+Sync's `storage.sync` and host the status UI) and NAT hole-punching for the
+harder NAT pairs. See [HANDOFF.md](HANDOFF.md) for the roadmap.
 
 ## Build
 
@@ -32,12 +40,38 @@ make lint       # golangci-lint
 ## Usage
 
 ```sh
-gusset version  # build version
-gusset doctor   # resolve the active Firefox profile, list installed extensions
+gusset version   # build version
+gusset doctor    # resolve the active Firefox profile, list installed extensions
+gusset init      # create the config (optionally a per-user salt to pair devices)
+gusset allow ID  # opt an extension into syncing (the allowlist is empty by default)
+gusset status    # show peers and per-extension sync state, with reasons
+gusset sync      # sync allowlisted extensions with a peer (see `gusset sync --help`)
 ```
 
 `doctor` is read-only — it touches nothing, and is the quickest way to confirm
 gusset can find your profile.
+
+A passphrase is the only shared secret. Put your 8 words in a `0600` file and
+point gusset at it with `GUSSET_PASSPHRASE_FILE` (or the default
+`<config-dir>/passphrase`); it is never written into the config. On each
+machine:
+
+```sh
+gusset allow uBlock0@raymondhill.net      # opt in the extensions you want synced
+gusset sync --for 2m                       # same WiFi: peers find each other by mDNS
+```
+
+To sync two machines that are not on the same LAN, point both at one shared
+folder (anything that syncs files between them works):
+
+```sh
+gusset sync --rendezvous-dir ~/Dropbox/gusset --for 2m
+```
+
+Each side publishes a sealed beacon (its reachable endpoints) to the folder and
+dials the other; the folder only ever holds opaque ciphertext. Applying incoming
+settings needs Firefox closed on the receiver — `gusset sync --restart-firefox`
+does that and relaunches it for you.
 
 ## License
 

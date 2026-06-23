@@ -2,6 +2,9 @@ package rendezvous
 
 import (
 	"context"
+	"os"
+	"path/filepath"
+	"strconv"
 	"testing"
 	"time"
 
@@ -173,6 +176,59 @@ func TestDirSignaling_PublishReplaces(t *testing.T) {
 	}
 	if latest.SrvReflexive != "203.0.113.9:52000" {
 		t.Fatalf("expected the re-published endpoint, got %q", latest.SrvReflexive)
+	}
+}
+
+func TestDirSignaling_FetchSkipsOversizeBeacon(t *testing.T) {
+	k := testKeys(t)
+	dir := t.TempDir()
+	sig := DirSignaling{Dir: dir}
+	ctx := context.Background()
+
+	// A legitimate small beacon alongside a hostile oversize ".beacon" file
+	// (memory-exhaustion attempt by a writer with folder access).
+	good := sampleBeacon()
+	good.DeviceID = "real-device"
+	sealed, err := Seal(good, k)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := sig.Publish(ctx, good.DeviceID, sealed); err != nil {
+		t.Fatal(err)
+	}
+	huge := make([]byte, maxBeaconBytes+1)
+	if err := os.WriteFile(filepath.Join(dir, "attacker.beacon"), huge, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := sig.Fetch(ctx, "reader")
+	if err != nil {
+		t.Fatalf("an oversize file must be skipped, not error: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("want only the real beacon, got %d entries", len(got))
+	}
+	if _, err := Open(got[0], k); err != nil {
+		t.Fatalf("the kept entry should be the real (openable) beacon: %v", err)
+	}
+}
+
+func TestDirSignaling_FetchCapsCount(t *testing.T) {
+	dir := t.TempDir()
+	// Flood the folder with more small ".beacon" files than the cap. Content is
+	// junk (it never has to Open) — the point is Fetch must not return unbounded.
+	for i := 0; i < maxBeacons+50; i++ {
+		name := filepath.Join(dir, "flood-"+strconv.Itoa(i)+beaconExt)
+		if err := os.WriteFile(name, []byte("junk"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, err := DirSignaling{Dir: dir}.Fetch(context.Background(), "reader")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) > maxBeacons {
+		t.Fatalf("Fetch must cap at %d entries, got %d", maxBeacons, len(got))
 	}
 }
 

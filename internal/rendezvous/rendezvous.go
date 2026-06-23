@@ -30,6 +30,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"time"
@@ -134,6 +135,18 @@ type DirSignaling struct {
 
 const beaconExt = ".beacon"
 
+// maxBeaconBytes and maxBeacons bound what Fetch will read from the carrier. A
+// sealed beacon is a few hundred bytes by design, and a person syncs a handful
+// of their own devices — so these caps are generous for honest use yet stop a
+// hostile or buggy writer with access to the shared folder (which the threat
+// model treats as an untrusted courier) from exhausting memory with one giant
+// file or a flood of small ones. An over-cap file is skipped, not read: a beacon
+// that large is not a real beacon.
+const (
+	maxBeaconBytes = 64 << 10 // 64 KiB
+	maxBeacons     = 256
+)
+
 // fileName hex-encodes selfID so any device id is a safe, collision-free
 // filename.
 func (d DirSignaling) fileName(selfID string) string {
@@ -189,13 +202,47 @@ func (d DirSignaling) Fetch(_ context.Context, selfID string) ([][]byte, error) 
 		if e.IsDir() || filepath.Ext(name) != beaconExt || name == self {
 			continue
 		}
-		data, err := os.ReadFile(filepath.Join(d.Dir, name))
+		// The carrier is untrusted: anyone with write access to the folder can
+		// drop files. Stop once we have collected enough — a beacon that does not
+		// Open is discarded by the caller anyway, so reading more is wasted work
+		// and a memory-exhaustion lever.
+		if len(out) >= maxBeacons {
+			break
+		}
+		data, err := readCapped(filepath.Join(d.Dir, name))
 		if err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				continue // a peer replaced its beacon between ReadDir and here
+			}
 			return nil, fmt.Errorf("rendezvous: read beacon %s: %w", name, err)
+		}
+		if data == nil {
+			continue // over the size cap — not a real beacon, skip it
 		}
 		out = append(out, data)
 	}
 	return out, nil
+}
+
+// readCapped reads a file but never holds more than maxBeaconBytes in memory: it
+// reads one byte past the cap and, if that byte exists, reports the file as
+// over-cap by returning (nil, nil) rather than the contents. Using a bounded
+// reader (not a stat) makes the cap robust against a writer that grows the file
+// between a size check and the read.
+func readCapped(path string) ([]byte, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = f.Close() }()
+	data, err := io.ReadAll(io.LimitReader(f, maxBeaconBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(data) > maxBeaconBytes {
+		return nil, nil // over the cap; refuse without keeping it
+	}
+	return data, nil
 }
 
 var _ Signaling = DirSignaling{}

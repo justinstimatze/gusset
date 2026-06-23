@@ -103,13 +103,17 @@ usage:
   gusset sync       sync allowlisted extensions with a LAN peer (on-demand; see --help)
 
   gusset sync flags:
-    --extensions a,b   extension IDs to sync (the opt-in allowlist)
-    --override a,b     force-enable sensitive (denylisted) extension IDs
-    --for 10m          stay reachable for a bounded window, then exit (default 30s)
-    --watch            stay reachable indefinitely (until Ctrl-C)
-    --peer host:port   dial a peer directly, skipping mDNS discovery
-    --listen host:port bind a specific listen address (default :0, an OS-picked port)
-    --restart-firefox  close Firefox to apply, then relaunch it (closes your browser)
+    --extensions a,b      extension IDs to sync (the opt-in allowlist)
+    --override a,b        force-enable sensitive (denylisted) extension IDs
+    --for 10m             stay reachable for a bounded window, then exit (default 30s)
+    --watch               stay reachable indefinitely (until Ctrl-C)
+    --peer host:port      dial a peer directly, skipping discovery
+    --listen host:port    bind a specific listen address (default :0, an OS-picked port)
+    --restart-firefox     close Firefox to apply, then relaunch it (closes your browser)
+    --rendezvous-dir dir  reach peers off the LAN by trading sealed beacons through
+                          a shared folder (Tier 1; e.g. a synced/Dropbox dir)
+    --device-id id        stable id for this device in beacons (default: hostname)
+    --stun host:port      STUN server to learn this device's public IP for its beacon
   passphrase comes from GUSSET_PASSPHRASE_FILE (a path) or GUSSET_PASSPHRASE.
 `)
 }

@@ -393,16 +393,24 @@ differences from leaking past `internal/store` and `internal/profile`.
     filesystem `DirSignaling` for tests/manual rendezvous). Both hermetically
     tested. Mirrors how the transport was built/tested before discovery wired it.
 
+14. ✅ **`gusset sync` Tier-1 wiring** (`--rendezvous-dir`) — gather (LAN endpoints
+    + optional `--stun` reflexive) → seal+publish (`rendezvous.DirSignaling`) →
+    fetch peers (Open-gated by passphrase, stale-filtered) → dial candidates in
+    order (LAN, then reflexive best-effort), reusing the mutual-TLS dial+reconcile
+    path. Merges with mDNS (a peer found both ways is pulled once); the connected
+    candidate sets the status `Link` (`lan`/`direct-nat`). Usable today through any
+    shared/synced folder, before the companion extension exists. ICE is the only
+    remaining dial mode (item 16). README + `--help` updated to match.
+
 **Next (Tier 1, externally-dependent):**
-14. The companion **extension** as the production `Signaling` carrier: publish each
+15. The companion **extension** as the production `Signaling` carrier: publish each
     device's sealed beacon to its own `storage.sync` key and read peers' — needs a
-    live Sync round-trip to validate. Plus the localhost **WS** server serving the
-    status `Snapshot` JSON and the status-grid UI.
-15. **NAT hole-punching** — an ICE agent (`pion/ice`) over the gathered
+    live Sync round-trip to validate. It becomes one more `rendezvous.Signaling`
+    impl behind the same seam `DirSignaling` fills today. Plus the localhost **WS**
+    server serving the status `Snapshot` JSON and the status-grid UI.
+16. **NAT hole-punching** — an ICE agent (`pion/ice`) over the gathered
     candidates, for the NAT pairs a direct dial to the beacon endpoints can't
-    reach. The cached-known-endpoint and easy-NAT cases work from the beacon alone.
-16. **`gusset sync` Tier-1 wiring** — gather (`stunc`) → seal+publish
-    (`rendezvous`) → fetch peers → dial (LAN, then reflexive, then ICE), behind a
-    flag; bridge progress into `internal/status`.
+    reach. The cached-known-endpoint, easy-NAT, and port-forward cases already work
+    from the beacon alone (item 14); ICE adds a third dial mode after reflexive.
 17. The opt-in **`--watch` user-service** daemon loop for set-and-forget, bridging
     `transport.ConnError` and sync progress into `internal/status`.

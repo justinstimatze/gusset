@@ -228,6 +228,28 @@
     `storage.sync`) and NAT hole-punching (`pion/ice`) are the next Tier-1 steps.
   - macOS note: both packages are OS-agnostic and cross-compile clean for darwin
     alongside the ffctl split above.
+- `gusset sync` Tier-1 wiring (`--rendezvous-dir`, transport doc §4): two machines
+  off the same LAN now sync by trading sealed beacons through a shared folder, no
+  companion extension required yet. Each pass gathers this device's beacon (every
+  non-loopback IPv4 at the listener port, plus a STUN reflexive candidate when
+  `--stun host:port` is given), publishes it via `rendezvous.DirSignaling`, and
+  fetches peers' beacons — opening only those sealed by the same passphrase and
+  dropping the stale. A peer's candidates are dialed in order (LAN first, then the
+  reflexive candidate as a best-effort direct-NAT attempt), reusing the existing
+  mutual-TLS dial+reconcile path; the connected candidate's kind sets the status
+  `Link` (`lan` / `direct-nat`). Rendezvous merges with mDNS so a peer reachable
+  both ways is pulled once. `--device-id` overrides the default per-device id
+  (hostname). The reflexive candidate is our public IP at the listener port —
+  honest for the port-forward / easy-NAT case; robust hole-punching for harder NAT
+  pairs is the deferred ICE step. The shared folder only ever holds opaque sealed
+  beacons.
+- `internal/rendezvous` hardening: `DirSignaling.Fetch` now bounds what it reads
+  from the carrier (≤64 KiB per beacon via a limited reader, not a TOCTOU-racy
+  stat; ≤256 beacons per fetch). The carrier is an untrusted courier — a writer
+  with folder access but no passphrase cannot forge a beacon that Opens, but could
+  otherwise exhaust memory with one giant file or a flood of small ones; the caps
+  close that while staying generous for honest use (a real beacon is a few hundred
+  bytes, and you sync a handful of your own devices).
 - `internal/chunk`: content-defined chunking (restic/chunker / FastCDC) →
   per-chunk keyed addressing + AEAD, plus signed manifest types. The chunker
   polynomial is derived per-user from the key (`crypto.Stream`), so boundaries
