@@ -72,6 +72,12 @@ func main() {
 		err = statusCmd()
 	case "sync":
 		err = syncCmd(args[1:])
+	case "init":
+		err = initCmd(args[1:])
+	case "allow":
+		err = allowCmd(args[1:])
+	case "disallow":
+		err = disallowCmd(args[1:])
 	default:
 		fmt.Fprintf(os.Stderr, "gusset: unknown command %q\n", args[0])
 		usage()
@@ -89,6 +95,9 @@ func usage() {
 usage:
   gusset version    print the build version
   gusset doctor     resolve the active Firefox profile and list installed extensions
+  gusset init       create the config (and optionally a per-user salt to pair devices)
+  gusset allow      add extension IDs to the persisted sync allowlist
+  gusset disallow   remove extension IDs from the allowlist
   gusset status     report sync status (peers and per-extension state, with reasons)
   gusset sync       sync allowlisted extensions with a LAN peer (on-demand; see --help)
 

@@ -8,11 +8,13 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
 
 	"github.com/justinstimatze/gusset/internal/chunk"
+	"github.com/justinstimatze/gusset/internal/config"
 	"github.com/justinstimatze/gusset/internal/converge"
 	"github.com/justinstimatze/gusset/internal/crypto"
 	"github.com/justinstimatze/gusset/internal/discovery"
@@ -43,14 +45,19 @@ func syncCmd(args []string) error {
 		return err
 	}
 
-	pass, err := readPassphrase()
+	cfg, err := config.Load()
+	if err != nil {
+		return err
+	}
+
+	pass, err := readPassphrase(cfg)
 	if err != nil {
 		return err
 	}
 	if err := crypto.ValidatePassphrase(pass); err != nil {
 		return err
 	}
-	k, err := crypto.DeriveKeys(pass, crypto.AppSalt)
+	k, err := crypto.DeriveKeys(pass, cfg.SaltOrApp())
 	if err != nil {
 		return err
 	}
@@ -63,7 +70,7 @@ func syncCmd(args []string) error {
 	if err != nil {
 		return err
 	}
-	pl := buildPolicy(*extCSV, *overrideCSV)
+	pl := buildPolicy(cfg, *extCSV, *overrideCSV)
 	allow := func(extID string) bool { return pl.Evaluate(extID).Allowed }
 
 	// What we can offer: installed AND allowlisted.
@@ -75,7 +82,7 @@ func syncCmd(args []string) error {
 	}
 	if len(offerIDs) == 0 {
 		fmt.Println("nothing to offer: no installed extension is allowlisted.")
-		fmt.Println("opt in with --extensions <id>[,<id>...] (see `gusset doctor` for installed IDs).")
+		fmt.Println("opt in with `gusset allow <id>` or --extensions <id>[,...] (see `gusset doctor` for IDs).")
 		fmt.Println("continuing to listen so a peer can still pull nothing — this is a no-op.")
 	}
 
@@ -269,9 +276,16 @@ func lifetimeContext(watch bool, forDur time.Duration) context.Context {
 	return ctx
 }
 
-// buildPolicy turns the --extensions / --override flags into a Policy.
-func buildPolicy(extCSV, overrideCSV string) *policy.Policy {
+// buildPolicy merges the persisted config allowlist/overrides with any
+// --extensions / --override flags (flags are additive for one-off syncs).
+func buildPolicy(cfg *config.Config, extCSV, overrideCSV string) *policy.Policy {
 	pl := policy.New()
+	for _, id := range cfg.Allowlist {
+		pl.Allow(id)
+	}
+	for _, id := range cfg.Overrides {
+		pl.Override(id)
+	}
 	for _, id := range splitCSV(extCSV) {
 		pl.Allow(id)
 	}
@@ -309,18 +323,31 @@ func localProfile() (dir string, installed map[string]string, err error) {
 	return dir, installed, nil
 }
 
-// readPassphrase loads the root secret from GUSSET_PASSPHRASE_FILE (preferred —
-// keeps it out of the process environment and `ps`) or GUSSET_PASSPHRASE.
-func readPassphrase() (string, error) {
-	if path := os.Getenv("GUSSET_PASSPHRASE_FILE"); path != "" {
+// readPassphrase loads the root secret, in order of preference: the config's
+// passphrase_file, then the default file (<config-dir>/passphrase), then
+// GUSSET_PASSPHRASE_FILE, then GUSSET_PASSPHRASE. A file is preferred over the
+// environment because it keeps the secret out of `ps`/the process environment.
+func readPassphrase(cfg *config.Config) (string, error) {
+	candidates := []string{cfg.PassphraseFile}
+	if d, err := config.Dir(); err == nil {
+		candidates = append(candidates, filepath.Join(d, "passphrase"))
+	}
+	candidates = append(candidates, os.Getenv("GUSSET_PASSPHRASE_FILE"))
+	for _, path := range candidates {
+		if path == "" {
+			continue
+		}
 		b, err := os.ReadFile(path)
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
 		if err != nil {
-			return "", fmt.Errorf("read GUSSET_PASSPHRASE_FILE: %w", err)
+			return "", fmt.Errorf("read passphrase file %s: %w", path, err)
 		}
 		return strings.TrimSpace(string(b)), nil
 	}
 	if p := os.Getenv("GUSSET_PASSPHRASE"); p != "" {
 		return p, nil
 	}
-	return "", errors.New("set GUSSET_PASSPHRASE_FILE (a path) or GUSSET_PASSPHRASE (the 8-word secret)")
+	return "", errors.New("no passphrase: run `gusset init`, write <config-dir>/passphrase, or set GUSSET_PASSPHRASE")
 }

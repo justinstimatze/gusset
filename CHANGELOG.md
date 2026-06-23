@@ -66,6 +66,19 @@
   store can be re-homed onto a machine where the origin dir does not yet exist.
   Verified end-to-end: a live uBO snapshot applies onto a synthetic profile with
   a different UUID, data intact.
+- `internal/config` + `gusset init`/`allow`/`disallow`: persisted per-user
+  settings (XDG config dir, overridable via `GUSSET_CONFIG_DIR`), so routine
+  syncs need no flags or environment. Holds the allowlist, sensitive overrides,
+  an optional per-user salt, and a pointer to the passphrase file; the passphrase
+  itself is never stored in the config. `gusset sync` now reads all of these:
+  salt via `SaltOrApp` (a configured per-user salt, else `crypto.AppSalt`),
+  allowlist/overrides merged with the `--extensions`/`--override` flags, and the
+  passphrase resolved from the config's file, then `<config-dir>/passphrase`,
+  then `GUSSET_PASSPHRASE_FILE`/`GUSSET_PASSPHRASE`. `gusset init` defaults to the
+  passphrase-alone path (the same 8 words reproduce keys everywhere, zero extra
+  sharing); `--new-salt` opts into the per-user-salt hardening (M1) and prints
+  the `init --salt <b64>` command to pair other devices. `init` refuses to
+  overwrite an existing config so a shared salt is never clobbered.
 - `internal/discovery`: LAN rendezvous over mDNS (`_gusset._tcp`). `Advertise`
   announces this device's transport listener (returning a stop func so the
   announcement lives only as long as the sync window — the §8 privacy posture);

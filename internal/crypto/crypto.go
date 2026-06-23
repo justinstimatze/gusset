@@ -24,8 +24,11 @@ import (
 )
 
 const (
-	keyLen  = 32 // XChaCha20-Poly1305 key / HMAC-SHA256 key
-	saltLen = 16
+	keyLen = 32 // XChaCha20-Poly1305 key / HMAC-SHA256 key
+	// SaltLen is the salt length DeriveKeys/NewSalt use; exported so callers
+	// (e.g. internal/config) can validate a stored salt before deriving with it.
+	SaltLen = 16
+	saltLen = SaltLen
 	// maxHKDFOut is the RFC 5869 ceiling for HKDF-SHA256 output: 255*HashLen.
 	maxHKDFOut = 255 * sha256.Size
 )
