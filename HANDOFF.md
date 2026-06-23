@@ -335,12 +335,18 @@ differences from leaking past `internal/store` and `internal/profile`.
    (VACUUM-INTO + `.files` capture, store identified by db name). 42 keys, 10
    external files.
 
-**Next (build order from docs/transport-and-security.md §"build order"):**
-4. `internal/policy` — allowlist (empty default) + sensitive denylist
-   (deny-with-override).
-5. `internal/crypto` — passphrase → Argon2id → keys; AEAD; keyed addressing.
-6. `internal/chunk` — FastCDC (restic/chunker) → keyed-hash + encrypt per chunk.
-7. `internal/transport` — Tier-0 LAN-direct backend, signaled via `storage.sync`.
-8. `internal/store` **Apply** path (UUID rewrite, atomic swap).
-9. Status plumbing (`gusset status` + localhost WS JSON), then the companion
-   extension (manifest/signaling courier + status UI).
+4. ✅ `internal/policy` — allowlist (empty default) + sensitive denylist
+   (deny-with-override) + name heuristic.
+5. ✅ `internal/crypto` — passphrase → Argon2id → keys; XChaCha20 AEAD; keyed
+   addressing; AAD binding; per-user salt; strength floor.
+6. ✅ `internal/chunk` — FastCDC (restic/chunker) → keyed-hash + encrypt per
+   chunk; signed manifests; per-user deterministic boundaries; resumable.
+7. ✅ `internal/store` **Apply** path — 3-place UUID rewrite + atomic swap,
+   verified re-homing a live store onto a different-UUID target.
+
+**Next:**
+8. `internal/transport` — Tier-0 LAN-direct backend, signaled via `storage.sync`.
+9. `internal/sync` — serialize a snapshot dir ⇄ stream (the store⇄chunk seam),
+   delta detection, LWW; wire snapshot→chunk→transport→reconstruct→apply.
+10. Status plumbing (`gusset status` + localhost WS JSON), then the companion
+    extension (manifest/signaling courier + status UI).

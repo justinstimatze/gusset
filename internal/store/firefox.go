@@ -70,6 +70,16 @@ func (f *Firefox) Snapshot(extID, workDir string) (*Snapshot, error) {
 		return nil, err
 	}
 
+	// Capture the origin's QuotaManager metadata so Apply can re-home the store
+	// onto a machine where the origin dir does not yet exist. originDir is the
+	// grandparent of the sqlite (<origin>/idb/<base>.sqlite).
+	originDir := filepath.Dir(filepath.Dir(dbPath))
+	if md, err := os.ReadFile(filepath.Join(originDir, ".metadata-v2")); err == nil {
+		if err := os.WriteFile(filepath.Join(dir, "metadata-v2"), md, 0o600); err != nil {
+			return nil, fmt.Errorf("capturing .metadata-v2: %w", err)
+		}
+	}
+
 	fileIDs, err := externalFileIDs(snapDB)
 	if err != nil {
 		return nil, err
@@ -91,6 +101,7 @@ func (f *Firefox) Snapshot(extID, workDir string) (*Snapshot, error) {
 			SourceUUID:    uuid,
 			OriginSuffix:  suffix,
 			DBName:        storageLocalDBName,
+			IDBFileBase:   strings.TrimSuffix(filepath.Base(dbPath), ".sqlite"),
 			ExternalFiles: fileIDs,
 		},
 	}

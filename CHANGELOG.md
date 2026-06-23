@@ -48,6 +48,16 @@
   - **L2** — policy gains `EvaluateNamed` + `LooksSensitiveName`: a name
     heuristic that deny-with-overrides credential-looking extensions not on the
     built-in denylist.
+- `internal/store` Apply (the write path): installs a snapshot into a target
+  profile, re-homing it onto that machine's per-install UUID by rewriting the
+  UUID in all three places it is embedded (origin dir name, `.metadata-v2`,
+  sqlite `database.origin` — DELTA 2). Stages on the same filesystem and swaps
+  the IDB dir in with a rename, keeping a backup until success. Refuses to write
+  a locked (running) Firefox profile and an uninstalled extension. Snapshot now
+  also records the name-derived IDB file base and captures `.metadata-v2` so a
+  store can be re-homed onto a machine where the origin dir does not yet exist.
+  Verified end-to-end: a live uBO snapshot applies onto a synthetic profile with
+  a different UUID, data intact.
 - `internal/chunk`: content-defined chunking (restic/chunker / FastCDC) →
   per-chunk keyed addressing + AEAD, plus signed manifest types. The chunker
   polynomial is derived per-user from the key (`crypto.Stream`), so boundaries

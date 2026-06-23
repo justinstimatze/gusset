@@ -37,6 +37,11 @@ type Meta struct {
 	// DBName is the IndexedDB database name, always "webExtensions-storage-local"
 	// for the storage.local backend — recorded for verification.
 	DBName string `json:"db_name,omitempty"`
+	// IDBFileBase is the on-disk basename of the IDB sqlite (without ".sqlite").
+	// Firefox derives it from the database name only, not the origin, so it is
+	// identical on every machine — Apply reuses it verbatim when placing the
+	// store under the target UUID's origin.
+	IDBFileBase string `json:"idb_file_base,omitempty"`
 	// ExternalFiles lists the ids present under <Dir>/files/.
 	ExternalFiles []int `json:"external_files,omitempty"`
 }
