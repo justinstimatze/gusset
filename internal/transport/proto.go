@@ -24,24 +24,29 @@ import (
 // single authenticated connection: the fetcher asks, the source answers, in
 // order. That matches how chunk.Reconstruct pulls chunks one at a time.
 const (
-	opHas byte = 1 // "do you have this address?" -> 1 byte 0/1
-	opGet byte = 2 // "give me this address"      -> 1 byte found, then framed bytes
+	opHas   byte = 1 // "do you have this address?" -> 1 byte 0/1
+	opGet   byte = 2 // "give me this address"      -> 1 byte found, then framed bytes
+	opOffer byte = 3 // "what do you offer?"        -> one framed (opaque) catalog blob
 )
 
 // Protocol bounds. Addresses are hex of an HMAC-SHA256 (64 chars); 128 is ample
 // headroom. A chunk is at most chunkMax (1 MiB) plus AEAD framing; 2 MiB is a
-// generous ceiling that still bounds memory against a hostile or buggy peer.
+// generous ceiling. The offer catalog is just manifests (addresses + sizes), so
+// 16 MiB covers a large allowlist comfortably. All bound memory against a
+// hostile or buggy peer.
 const (
 	maxAddrLen   = 128
 	maxChunkLen  = 2 * 1024 * 1024
+	maxOfferLen  = 16 * 1024 * 1024
 	readBufBytes = 64 * 1024
 )
 
-// errAddrTooLong and errChunkTooLong reject oversized framed reads before
-// allocating, so a peer cannot make us allocate unbounded memory.
+// These reject oversized framed reads before allocating, so a peer cannot make
+// us allocate unbounded memory.
 var (
 	errAddrTooLong  = errors.New("transport: address frame too long")
 	errChunkTooLong = errors.New("transport: chunk frame too long")
+	errOfferTooLong = errors.New("transport: offer frame too long")
 )
 
 // ChunkSource is the server side: the local set of encrypted chunks this device
@@ -53,6 +58,15 @@ type ChunkSource interface {
 	Has(address string) bool
 	// Get returns the sealed ciphertext for address, or ok=false if absent.
 	Get(address string) (data []byte, ok bool)
+}
+
+// OfferSource is an optional capability a ChunkSource may also implement: it
+// returns this device's catalog of what it has to sync, as an opaque blob (the
+// reconcile layer marshals/unmarshals it — transport stays data-agnostic). A
+// server whose source does not implement OfferSource answers opOffer with an
+// empty catalog.
+type OfferSource interface {
+	Offer() ([]byte, error)
 }
 
 // MapSource adapts an in-memory address->ciphertext map (what chunk.Split
@@ -72,6 +86,29 @@ func (m MapSource) Get(address string) ([]byte, bool) {
 	return d, ok
 }
 
+// StaticSource bundles a chunk map with an opaque offer catalog, satisfying both
+// ChunkSource and OfferSource — what `gusset sync` serves to a peer for one run.
+// Read-only after construction, so concurrent Serve goroutines share it safely.
+type StaticSource struct {
+	Chunks    map[string][]byte
+	OfferBlob []byte
+}
+
+// Has implements ChunkSource.
+func (s StaticSource) Has(address string) bool {
+	_, ok := s.Chunks[address]
+	return ok
+}
+
+// Get implements ChunkSource.
+func (s StaticSource) Get(address string) ([]byte, bool) {
+	d, ok := s.Chunks[address]
+	return d, ok
+}
+
+// Offer implements OfferSource.
+func (s StaticSource) Offer() ([]byte, error) { return s.OfferBlob, nil }
+
 // Serve answers chunk requests on conn from src until the peer closes the
 // connection (io.EOF) or a protocol/IO error occurs. It is the server-side loop;
 // one call handles one connection. A clean peer hangup returns nil.
@@ -86,16 +123,26 @@ func Serve(conn io.ReadWriter, src ChunkSource) error {
 		if err != nil {
 			return fmt.Errorf("transport: read op: %w", err)
 		}
-		addr, err := readFrame(r, maxAddrLen, errAddrTooLong)
-		if err != nil {
-			return err
-		}
 		switch op {
-		case opHas:
-			if err := writeBool(w, src.Has(string(addr))); err != nil {
+		case opOffer: // no address; answer with the (possibly empty) catalog
+			blob, err := offerOf(src)
+			if err != nil {
 				return err
 			}
-		case opGet:
+			if err := writeFrame(w, blob); err != nil {
+				return err
+			}
+		case opHas, opGet:
+			addr, err := readFrame(r, maxAddrLen, errAddrTooLong)
+			if err != nil {
+				return err
+			}
+			if op == opHas {
+				if err := writeBool(w, src.Has(string(addr))); err != nil {
+					return err
+				}
+				break
+			}
 			data, ok := src.Get(string(addr))
 			if err := writeBool(w, ok); err != nil {
 				return err
@@ -112,6 +159,17 @@ func Serve(conn io.ReadWriter, src ChunkSource) error {
 			return fmt.Errorf("transport: flush: %w", err)
 		}
 	}
+}
+
+// offerOf returns src's catalog blob if it implements OfferSource, else empty
+// (a source with nothing to advertise is valid — the peer reads it as "offers
+// nothing").
+func offerOf(src ChunkSource) ([]byte, error) {
+	os, ok := src.(OfferSource)
+	if !ok {
+		return nil, nil
+	}
+	return os.Offer()
 }
 
 // Client is the fetcher side: a sequential request/response wrapper over one
@@ -157,6 +215,19 @@ func (c *Client) Get(address string) ([]byte, error) {
 		return nil, fmt.Errorf("transport: peer lacks chunk %s", short(address))
 	}
 	return readFrame(c.r, maxChunkLen, errChunkTooLong)
+}
+
+// Offer fetches the peer's catalog blob — the opaque advertisement of what it
+// has to sync. The reconcile layer unmarshals it; an empty result means the peer
+// offers nothing.
+func (c *Client) Offer() ([]byte, error) {
+	if err := c.w.WriteByte(opOffer); err != nil {
+		return nil, err
+	}
+	if err := c.w.Flush(); err != nil {
+		return nil, err
+	}
+	return readFrame(c.r, maxOfferLen, errOfferTooLong)
 }
 
 // Close closes the underlying connection.

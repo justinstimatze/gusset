@@ -79,6 +79,41 @@ func TestProto_SequentialRequests(t *testing.T) {
 	}
 }
 
+func TestProto_Offer(t *testing.T) {
+	src := StaticSource{
+		Chunks:    map[string][]byte{"aa": []byte("x")},
+		OfferBlob: []byte(`{"uBlock0@x":"manifest"}`),
+	}
+	c, s := net.Pipe()
+	go func() { _ = Serve(s, src) }()
+	client := NewClient(c)
+	t.Cleanup(func() { _ = client.Close() })
+
+	blob, err := client.Offer()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(blob, src.OfferBlob) {
+		t.Errorf("offer mismatch: got %q", blob)
+	}
+	// Chunk ops still work after an offer on the same connection.
+	if got, err := client.Get("aa"); err != nil || !bytes.Equal(got, []byte("x")) {
+		t.Errorf("Get after Offer = %q, %v", got, err)
+	}
+}
+
+func TestProto_OfferEmptyWhenSourceDoesNotOffer(t *testing.T) {
+	// A plain MapSource has no catalog; opOffer must still answer (empty), not error.
+	client := pipeClient(t, MapSource{"aa": []byte("x")})
+	blob, err := client.Offer()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(blob) != 0 {
+		t.Errorf("expected empty offer, got %q", blob)
+	}
+}
+
 func TestProto_RejectsOversizedAddress(t *testing.T) {
 	client := pipeClient(t, MapSource{})
 	if _, err := client.Has(strings.Repeat("x", maxAddrLen+1)); err == nil {
