@@ -71,6 +71,29 @@ store) out from under the browser. That's undocumented and racy. Going through
 a companion extension means manifests are written via the *supported*
 `storage.sync` API and Firefox handles syncing them. No fragile injection.
 
+#### Be a good Firefox Sync citizen
+
+Firefox Sync is a free, end-to-end-encrypted service Mozilla runs for users, and
+gusset rides it for the control plane. We treat that as a courtesy to use
+lightly, not a resource to exploit. Concretely, this is a design constraint, not
+a nicety:
+
+- **Never put bulk data on `storage.sync`.** Only tiny manifests (a few KB of
+  content-hashes) ride Sync; the megabyte-scale chunks go through gusset's own
+  transport. This is the whole point of the control-plane / data-plane split —
+  keep it that way. Anything that would grow the `storage.sync` payload toward
+  the ~100 KB quota is a smell.
+- **Don't talk to Mozilla's servers directly, and don't force syncs.** gusset
+  reads and writes only *local* state (the companion extension's `storage.sync`,
+  surfaced locally in `storage-sync-v2.sqlite`) and lets Firefox sync on its own
+  cadence. No polling Mozilla's sync endpoints, no programmatic "sync now" loops,
+  no hammering. The daemon's network traffic is with *our* transport only.
+- **Stay within the documented, supported surface.** Manifests go through the
+  `storage.sync` API; we do not reverse-engineer or abuse Sync internals.
+
+If a feature would make gusset a heavier guest on Mozilla's infrastructure,
+that's a reason to redesign it, not to ship it.
+
 ### Data plane = content-addressed chunk store
 
 The bulk chunks (the actual extension settings) go through any dumb,
