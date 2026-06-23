@@ -402,15 +402,24 @@ differences from leaking past `internal/store` and `internal/profile`.
     shared/synced folder, before the companion extension exists. ICE is the only
     remaining dial mode (item 16). README + `--help` updated to match.
 
+16. ✅ **NAT hole-punching** — `internal/icewire` (pion/ice punch + quic-go
+    reliable stream over the punched path, reusing `transport.Identity`'s
+    passphrase-pinned mutual-TLS) wired into `gusset sync`. With `--stun`, a device
+    gathers an ICE endpoint and advertises it sealed in its beacon
+    (`rendezvous.Beacon.ICE`); when every direct dial fails, gusset punches and
+    reconciles over the punched QUIC connection — bidirectionally (one path,
+    both directions) — with the controlling/QUIC-client role chosen by the greater
+    device id. Verified in-process over pion vnet (`internal/icewire` end-to-end
+    test; spikes in `spikes/icepunch`). The ICE agent is single-use per run.
+    Boundary: symmetric↔symmetric still needs a relay (item below).
+
 **Next (Tier 1, externally-dependent):**
 15. The companion **extension** as the production `Signaling` carrier: publish each
     device's sealed beacon to its own `storage.sync` key and read peers' — needs a
     live Sync round-trip to validate. It becomes one more `rendezvous.Signaling`
     impl behind the same seam `DirSignaling` fills today. Plus the localhost **WS**
     server serving the status `Snapshot` JSON and the status-grid UI.
-16. **NAT hole-punching** — an ICE agent (`pion/ice`) over the gathered
-    candidates, for the NAT pairs a direct dial to the beacon endpoints can't
-    reach. The cached-known-endpoint, easy-NAT, and port-forward cases already work
-    from the beacon alone (item 14); ICE adds a third dial mode after reflexive.
 17. The opt-in **`--watch` user-service** daemon loop for set-and-forget, bridging
     `transport.ConnError` and sync progress into `internal/status`.
+18. **TURN relay (Tier-2)** for the symmetric↔symmetric NAT pairs ICE alone cannot
+    punch (no port prediction) — the one case the hole-punch fallback can't cover.

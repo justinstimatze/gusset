@@ -97,6 +97,41 @@ func TestRendezvousSource_PeersOrdersFiltersAndExcludesSelf(t *testing.T) {
 	}
 }
 
+func TestRendezvousSource_CarriesICEEndpoint(t *testing.T) {
+	k := tier1Keys(t)
+	dir := t.TempDir()
+	ctx := context.Background()
+
+	// A peer behind a NAT may publish only an ICE endpoint (no dialable targets);
+	// the source must still surface it as a peer so the hole-punch fallback fires.
+	peer := rendezvousSource{sig: rendezvous.DirSignaling{Dir: dir}, k: k, selfID: "peer"}
+	want := &rendezvous.ICEEndpoint{Ufrag: "uf", Pwd: "a-longer-ice-password", Candidates: []string{"candidate:1 1 udp 2113937151 203.0.113.7 51000 typ srflx"}}
+	if err := peer.publish(ctx, rendezvous.Beacon{
+		DeviceID: "peer", Instance: "kestrel", ICE: want, IssuedAt: 1_000_000,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	self := rendezvousSource{sig: rendezvous.DirSignaling{Dir: dir}, k: k, selfID: "self"}
+	got, err := self.peers(ctx, 1_000_060)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("want one peer (ICE-only is still reachable via punch), got %d", len(got))
+	}
+	if got[0].ice == nil {
+		t.Fatal("rzPeer.ice is nil; the ICE endpoint did not plumb through")
+	}
+	if len(got[0].targets) != 0 {
+		t.Fatalf("an ICE-only beacon should have no direct dial targets, got %d", len(got[0].targets))
+	}
+	ep := toICEEndpoint(*got[0].ice)
+	if ep.Ufrag != want.Ufrag || ep.Pwd != want.Pwd || len(ep.Candidates) != 1 {
+		t.Fatalf("ICE endpoint conversion mismatch: %+v", ep)
+	}
+}
+
 func TestRendezvousSource_PeersSkipsForeignPassphrase(t *testing.T) {
 	dir := t.TempDir()
 	ctx := context.Background()

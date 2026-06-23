@@ -48,6 +48,30 @@ func TestSealOpen_RoundTrip(t *testing.T) {
 	}
 }
 
+func TestSealOpen_CarriesICEEndpoint(t *testing.T) {
+	k := testKeys(t)
+	b := sampleBeacon()
+	b.ICE = &ICEEndpoint{
+		Ufrag:      "abcd",
+		Pwd:        "a-much-longer-ice-password-value",
+		Candidates: []string{"candidate:1 1 udp 2113937151 192.168.1.20 49200 typ host", "candidate:2 1 udp 1677729535 203.0.113.7 51000 typ srflx"},
+	}
+	sealed, err := Seal(b, k)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := Open(sealed, k)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.ICE == nil {
+		t.Fatal("ICE endpoint did not survive the round-trip")
+	}
+	if got.ICE.Ufrag != b.ICE.Ufrag || got.ICE.Pwd != b.ICE.Pwd || len(got.ICE.Candidates) != 2 {
+		t.Fatalf("ICE endpoint mismatch: got %+v", got.ICE)
+	}
+}
+
 func TestSeal_RequiresDeviceID(t *testing.T) {
 	k := testKeys(t)
 	b := sampleBeacon()

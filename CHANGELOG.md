@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+- NAT hole-punching wired into `gusset sync` (HANDOFF item 16, increment 2). When
+  `--stun` is set on the rendezvous path, the device now also gathers an ICE
+  endpoint (creds + candidates) and advertises it, sealed, inside its beacon
+  (`rendezvous.Beacon.ICE`). When every direct dial to a peer (LAN, then
+  reflexive) fails and that peer published an ICE endpoint, gusset punches a hole
+  with `internal/icewire` and reconciles over it. The punched QUIC connection is
+  bidirectional, so one expensive path carries a full reconcile both ways (we
+  serve our offer on the stream the peer opens, and pull theirs on a stream we
+  open) rather than the LAN model's two separate connections. The ICE controlling
+  side (and QUIC client) is chosen by the greater device id, so both peers agree
+  on opposite roles; status reflects `hole-punching` → `connected (direct-nat)` or
+  `unreachable (nat-traversal-failed)`. The ICE agent is gathered once per run and
+  spent on the first peer that needs it. Coverage boundary unchanged:
+  symmetric↔symmetric still needs a TURN relay (Tier-2).
 - `internal/icewire` — NAT-traversal data path (HANDOFF item 16), first increment.
   Adopts pion/ice for hole-punching and quic-go for a reliable, ordered stream
   over the punched UDP path (ICE alone yields datagrams; the chunk protocol needs

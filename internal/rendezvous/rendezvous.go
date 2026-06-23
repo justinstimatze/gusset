@@ -56,12 +56,23 @@ var ErrSchema = errors.New("rendezvous: unsupported beacon schema version")
 // hundred bytes — because it rides Firefox Sync, where gusset is a good citizen
 // (no bulk on storage.sync).
 type Beacon struct {
-	SchemaVersion int      `json:"v"`
-	DeviceID      string   `json:"device_id"`     // stable per-device id; distinguishes your own machines (the shared passphrase identity cannot)
-	Instance      string   `json:"instance"`      // human label (hostname), for status display
-	LANEndpoints  []string `json:"lan,omitempty"` // host:port candidates on the local network
-	SrvReflexive  string   `json:"srflx,omitempty"`
-	IssuedAt      int64    `json:"issued_at"` // caller-supplied unix seconds; this package reads no clock
+	SchemaVersion int          `json:"v"`
+	DeviceID      string       `json:"device_id"`     // stable per-device id; distinguishes your own machines (the shared passphrase identity cannot)
+	Instance      string       `json:"instance"`      // human label (hostname), for status display
+	LANEndpoints  []string     `json:"lan,omitempty"` // host:port candidates on the local network
+	SrvReflexive  string       `json:"srflx,omitempty"`
+	ICE           *ICEEndpoint `json:"ice,omitempty"` // ICE creds + candidates for NAT-hole-punch fallback (internal/icewire)
+	IssuedAt      int64        `json:"issued_at"`     // caller-supplied unix seconds; this package reads no clock
+}
+
+// ICEEndpoint carries what a peer needs to hole-punch to this device: the ICE
+// short-term credentials and the device's gathered candidates (marshaled). It
+// mirrors internal/icewire.Endpoint, redeclared here so the beacon (the wire
+// format) stays free of the pion dependency; the command converts between them.
+type ICEEndpoint struct {
+	Ufrag      string   `json:"ufrag"`
+	Pwd        string   `json:"pwd"`
+	Candidates []string `json:"candidates"`
 }
 
 // Seal validates and serializes a beacon, then AEAD-seals it for publication.

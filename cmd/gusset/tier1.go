@@ -37,11 +37,14 @@ type rendezvousSource struct {
 	selfID string
 }
 
-// rzPeer is one opened beacon resolved to dial targets, most-likely-first.
+// rzPeer is one opened beacon resolved to dial targets (most-likely-first) plus
+// the peer's ICE endpoint, if any, for the hole-punch fallback when every direct
+// target fails.
 type rzPeer struct {
 	instance string
 	deviceID string
 	targets  []dialTarget
+	ice      *rendezvous.ICEEndpoint
 }
 
 // publish seals this device's beacon and writes it to the carrier, replacing any
@@ -72,10 +75,10 @@ func (s rendezvousSource) peers(ctx context.Context, now int64) ([]rzPeer, error
 			continue
 		}
 		targets := beaconTargets(b)
-		if len(targets) == 0 {
-			continue
+		if len(targets) == 0 && b.ICE == nil {
+			continue // nothing dialable and no hole-punch endpoint either
 		}
-		out = append(out, rzPeer{instance: b.Instance, deviceID: b.DeviceID, targets: targets})
+		out = append(out, rzPeer{instance: b.Instance, deviceID: b.DeviceID, targets: targets, ice: b.ICE})
 	}
 	return out, nil
 }

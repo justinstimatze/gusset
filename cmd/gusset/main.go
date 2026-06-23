@@ -113,7 +113,8 @@ usage:
     --rendezvous-dir dir  reach peers off the LAN by trading sealed beacons through
                           a shared folder (Tier 1; e.g. a synced/Dropbox dir)
     --device-id id        stable id for this device in beacons (default: hostname)
-    --stun host:port      STUN server to learn this device's public IP for its beacon
+    --stun host:port      STUN server; adds the public-IP beacon candidate and
+                          enables the ICE NAT-hole-punch fallback
   passphrase comes from GUSSET_PASSPHRASE_FILE (a path) or GUSSET_PASSPHRASE.
 `)
 }

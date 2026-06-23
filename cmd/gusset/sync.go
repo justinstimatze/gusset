@@ -19,6 +19,7 @@ import (
 	"github.com/justinstimatze/gusset/internal/crypto"
 	"github.com/justinstimatze/gusset/internal/discovery"
 	"github.com/justinstimatze/gusset/internal/ffctl"
+	"github.com/justinstimatze/gusset/internal/icewire"
 	"github.com/justinstimatze/gusset/internal/policy"
 	"github.com/justinstimatze/gusset/internal/profile"
 	"github.com/justinstimatze/gusset/internal/rendezvous"
@@ -43,7 +44,7 @@ func syncCmd(args []string) error {
 	peerAddr := fs.String("peer", "", "dial this host:port directly, skipping mDNS discovery")
 	rzDir := fs.String("rendezvous-dir", "", "exchange sealed beacons through this shared folder to reach peers off the LAN (Tier 1)")
 	deviceID := fs.String("device-id", "", "stable id for this device in rendezvous beacons (default: hostname)")
-	stunServer := fs.String("stun", "", "STUN server host:port to learn this device's public IP for its beacon (e.g. stun.l.google.com:19302)")
+	stunServer := fs.String("stun", "", "STUN server host:port; enables the public-IP beacon candidate and the ICE hole-punch fallback (e.g. stun.l.google.com:19302)")
 	listenAddr := fs.String("listen", "0.0.0.0:0", "address to listen on (host:port; :0 picks a free port)")
 	extCSV := fs.String("extensions", "", "comma-separated extension IDs to sync (the allowlist)")
 	overrideCSV := fs.String("override", "", "comma-separated sensitive extension IDs to force-enable")
@@ -164,7 +165,7 @@ func syncCmd(args []string) error {
 
 	ctx := lifetimeContext(*watch, *forDur)
 	target := store.NewFirefox(profDir)
-	pullDeps := pullContext{id: id, target: target, k: k, localCat: localCat, allow: allow, workDir: workDir, model: model}
+	pullDeps := pullContext{id: id, target: target, k: k, localCat: localCat, allow: allow, workDir: workDir, model: model, offer: offer}
 
 	var outcomes []converge.Outcome
 	switch {
@@ -172,10 +173,15 @@ func syncCmd(args []string) error {
 		if *rzDir != "" {
 			fmt.Fprintln(os.Stderr, "note: --peer is set, so --rendezvous-dir is ignored (dialing the peer directly).")
 		}
-		outcomes = pullFrom([]dialTarget{{addr: *peerAddr, link: status.LinkLAN}}, *peerAddr, pullDeps)
+		outcomes, _ = pullFrom([]dialTarget{{addr: *peerAddr, link: status.LinkLAN}}, *peerAddr, pullDeps)
 		<-ctx.Done() // linger so the peer can pull from us within the window
 	default:
-		rzSrc, beacon := setupRendezvous(ctx, *rzDir, *deviceID, *stunServer, host, tcpAddr.Port, k)
+		rzSrc, beacon, devID, sess := setupRendezvous(ctx, *rzDir, *deviceID, *stunServer, host, tcpAddr.Port, k)
+		if sess != nil {
+			defer func() { _ = sess.Close() }() // releases the ICE agent if it was never consumed
+		}
+		pullDeps.selfID = devID
+		pullDeps.iceSession = sess
 		outcomes = runDiscoveryLoop(ctx, host, pullDeps, rzSrc, beacon)
 	}
 
@@ -228,6 +234,14 @@ type pullContext struct {
 	allow    func(string) bool
 	workDir  string
 	model    *status.Model
+
+	// Tier-1 hole-punch fallback (set only on the rendezvous path). offer is
+	// this device's chunk source, served back to the peer over the punched path;
+	// iceSession is the gathered ICE agent (single-use per run); selfID is this
+	// device's beacon id, used to break the ICE controlling tie deterministically.
+	offer      transport.ChunkSource
+	iceSession *icewire.Session
+	selfID     string
 }
 
 // dialTarget is one candidate address for a peer, tagged with the link kind it
@@ -258,7 +272,8 @@ func runDiscoveryLoop(ctx context.Context, host string, deps pullContext, rz *re
 				continue
 			}
 			handled[p.Addr] = true
-			all = append(all, pullFrom([]dialTarget{{addr: p.Addr, link: status.LinkLAN}}, p.Instance, deps)...)
+			out, _ := pullFrom([]dialTarget{{addr: p.Addr, link: status.LinkLAN}}, p.Instance, deps)
+			all = append(all, out...)
 		}
 		if rz != nil {
 			all = append(all, rendezvousPass(ctx, rz, beacon, handled, deps)...)
@@ -286,7 +301,13 @@ func rendezvousPass(ctx context.Context, rz *rendezvousSource, beacon rendezvous
 			continue
 		}
 		handled[key] = true
-		out = append(out, pullFrom(p.targets, p.instance, deps)...)
+		outcomes, dialed := pullFrom(p.targets, p.instance, deps)
+		// Every direct target failed but the peer published a hole-punch
+		// endpoint and we have an ICE agent to spend — try to punch through.
+		if !dialed && p.ice != nil && deps.iceSession != nil {
+			outcomes = icePull(p, deps)
+		}
+		out = append(out, outcomes...)
 	}
 	return out
 }
@@ -311,8 +332,10 @@ func dialFirst(targets []dialTarget, id *transport.Identity) (*transport.Client,
 
 // pullFrom dials a peer (trying its candidates in order), reconciles, records the
 // outcome in the status model (so the end-of-run grid explains every extension
-// and peer), and returns the outcomes for the apply-action banner.
-func pullFrom(targets []dialTarget, name string, deps pullContext) []converge.Outcome {
+// and peer), and returns the outcomes for the apply-action banner. The bool
+// reports whether a connection was established: false means every direct target
+// failed, so the caller may fall back to a hole-punch.
+func pullFrom(targets []dialTarget, name string, deps pullContext) ([]converge.Outcome, bool) {
 	now := time.Now().Unix()
 	client, link, err := dialFirst(targets, deps.id)
 	if err != nil {
@@ -320,7 +343,7 @@ func pullFrom(targets []dialTarget, name string, deps pullContext) []converge.Ou
 			DeviceID: name, State: status.Unreachable,
 			Reason: status.PeerOffline, Detail: err.Error(), Since: now,
 		})
-		return nil
+		return nil, false
 	}
 	defer func() { _ = client.Close() }()
 	deps.model.SetPeer(status.Peer{DeviceID: name, State: status.Connected, Link: link, Since: now})
@@ -331,12 +354,12 @@ func pullFrom(targets []dialTarget, name string, deps pullContext) []converge.Ou
 			DeviceID: name, State: status.Unreachable,
 			Reason: status.AuthFailed, Detail: err.Error(), Since: now,
 		})
-		return nil
+		return nil, true // connected, but the reconcile failed — not a dial failure
 	}
 	for _, o := range outcomes {
 		deps.model.SetExtSync(toExtSync(o, name, now))
 	}
-	return outcomes
+	return outcomes, true
 }
 
 // toExtSync maps a reconcile Outcome onto a status entry.
@@ -361,14 +384,16 @@ func toExtSync(o converge.Outcome, peer string, now int64) status.ExtSync {
 	return e
 }
 
-// setupRendezvous prepares the Tier-1 peer feed when --rendezvous-dir is set:
-// it gathers this device's beacon (LAN endpoints, plus a STUN reflexive
-// candidate when --stun is given) and publishes it once so a peer already
-// waiting sees us immediately. It returns (nil, zero) when no rendezvous dir is
-// configured or the first publish fails — the caller then runs LAN-only.
-func setupRendezvous(ctx context.Context, rzDir, deviceID, stunServer, host string, port int, k *crypto.Keys) (*rendezvousSource, rendezvous.Beacon) {
+// setupRendezvous prepares the Tier-1 peer feed when --rendezvous-dir is set: it
+// gathers this device's beacon (LAN endpoints, plus a STUN reflexive candidate
+// and an ICE hole-punch endpoint when --stun is given), publishes it once so a
+// peer already waiting sees us immediately, and returns the live ICE session for
+// the punch fallback. It returns nils (LAN-only) when no rendezvous dir is
+// configured or the first publish fails. devID is returned for the ICE
+// controlling tie-break.
+func setupRendezvous(ctx context.Context, rzDir, deviceID, stunServer, host string, port int, k *crypto.Keys) (*rendezvousSource, rendezvous.Beacon, string, *icewire.Session) {
 	if rzDir == "" {
-		return nil, rendezvous.Beacon{}
+		return nil, rendezvous.Beacon{}, "", nil
 	}
 	devID := deviceID
 	if devID == "" {
@@ -376,16 +401,31 @@ func setupRendezvous(ctx context.Context, rzDir, deviceID, stunServer, host stri
 	}
 	src := &rendezvousSource{sig: rendezvous.DirSignaling{Dir: rzDir}, k: k, selfID: devID}
 	beacon := gatherBeacon(devID, host, port, stunServer, time.Now().Unix())
+
+	// A STUN server also enables the hole-punch fallback: gather an ICE endpoint
+	// and advertise it so a peer we can't dial directly can punch to us.
+	var sess *icewire.Session
+	if stunServer != "" {
+		sess, beacon.ICE = gatherICESession(stunServer)
+	}
+
 	if err := src.publish(ctx, beacon); err != nil {
 		fmt.Fprintf(os.Stderr, "rendezvous: publish beacon (%v); continuing LAN-only.\n", err)
-		return nil, rendezvous.Beacon{}
+		if sess != nil {
+			_ = sess.Close()
+		}
+		return nil, rendezvous.Beacon{}, "", nil
 	}
 	cands := len(beacon.LANEndpoints)
 	if beacon.SrvReflexive != "" {
 		cands++
 	}
-	fmt.Printf("rendezvous: published beacon %q with %d candidate endpoint(s) to %s\n", devID, cands, rzDir)
-	return src, beacon
+	punch := ""
+	if beacon.ICE != nil {
+		punch = ", hole-punch enabled"
+	}
+	fmt.Printf("rendezvous: published beacon %q with %d candidate endpoint(s)%s to %s\n", devID, cands, punch, rzDir)
+	return src, beacon, devID, sess
 }
 
 // lifetimeContext builds the run's deadline: indefinite under --watch (until a
