@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- The localhost WebSocket is now the production beacon carrier as well as the
+  status stream. The daemon cannot touch the `storage.sync` API — only the
+  extension can — so the WS server implements `rendezvous.Signaling` by proxy:
+  it pushes this device's sealed beacon to the extension to publish, and takes
+  the peer beacons the extension reports from `storage.sync`. `gusset sync --ws`
+  without a `--rendezvous-dir` now uses the companion extension as its
+  cross-network rendezvous carrier (the shared folder remains the alternative
+  when there is no extension). The daemon↔extension protocol is a small
+  typed-envelope WebSocket, contract-tested against a mock extension client.
 - `internal/statusws` + `gusset sync --ws host:port`: the daemon can now stream
   live status to the companion extension over a localhost WebSocket. It is
   loopback-only (a non-loopback bind is refused) and gated by a token derived

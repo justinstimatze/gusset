@@ -17,12 +17,14 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/coder/websocket"
 	"github.com/coder/websocket/wsjson"
 
 	"github.com/justinstimatze/gusset/internal/crypto"
+	"github.com/justinstimatze/gusset/internal/rendezvous"
 	"github.com/justinstimatze/gusset/internal/status"
 )
 
@@ -53,23 +55,117 @@ type authMsg struct {
 	Token string `json:"token"`
 }
 
-// statusMsg is what the server pushes: a typed envelope around a Snapshot, so
-// the protocol can carry other message types later without ambiguity.
+// The daemon↔extension protocol is a small typed-envelope WebSocket. After the
+// auth frame it is bidirectional:
+//
+//	server -> client  {"type":"status","snapshot":{...}}      live status
+//	server -> client  {"type":"beacon","beacon":"<b64>"}      publish this to storage.sync
+//	client -> server  {"type":"peers","beacons":["<b64>",...]} peers seen in storage.sync
+//
+// []byte fields marshal as base64 via encoding/json, so sealed beacons ride as
+// strings. The carrier half (beacon/peers) lets the extension be the storage.sync
+// courier the daemon cannot be: only the extension can use the storage.sync API,
+// so it writes the daemon's beacon and reports back the beacons Firefox Sync
+// brought from the user's other devices.
 type statusMsg struct {
-	Type     string          `json:"type"` // always "status" for now
+	Type     string          `json:"type"` // "status"
 	Snapshot status.Snapshot `json:"snapshot"`
 }
 
-// Server streams a status.Model over a token-gated localhost WebSocket.
+// beaconMsg asks the extension to publish this device's sealed beacon.
+type beaconMsg struct {
+	Type   string `json:"type"` // "beacon"
+	Beacon []byte `json:"beacon"`
+}
+
+// clientMsg is a frame from the extension after auth. The first frame is authMsg;
+// every frame after it is a clientMsg (today only "peers").
+type clientMsg struct {
+	Type    string   `json:"type"`
+	Beacons [][]byte `json:"beacons,omitempty"`
+}
+
+// Server streams a status.Model over a token-gated localhost WebSocket and
+// carries beacons to and from the connected extension. It implements
+// rendezvous.Signaling: Publish hands the extension a beacon to write to
+// storage.sync, and Fetch returns the peer beacons the extension last reported.
 type Server struct {
 	model *status.Model
 	token string
+
+	bmu        sync.Mutex
+	beacon     []byte   // this device's sealed beacon, pushed to the extension to publish
+	peers      [][]byte // peer beacons the extension last reported from storage.sync
+	beaconSubs map[chan struct{}]struct{}
 }
+
+var _ rendezvous.Signaling = (*Server)(nil)
 
 // NewServer builds a status WebSocket server for model, gated by token (from
 // Token). It is an http.Handler; use Serve to run it bound to loopback.
 func NewServer(model *status.Model, token string) *Server {
-	return &Server{model: model, token: token}
+	return &Server{model: model, token: token, beaconSubs: map[chan struct{}]struct{}{}}
+}
+
+// SetBeacon records this device's sealed beacon and wakes connected extensions
+// to publish it. Replaces any previous beacon.
+func (s *Server) SetBeacon(sealed []byte) {
+	s.bmu.Lock()
+	s.beacon = append([]byte(nil), sealed...)
+	for ch := range s.beaconSubs {
+		select {
+		case ch <- struct{}{}:
+		default:
+		}
+	}
+	s.bmu.Unlock()
+}
+
+// PeerBeacons returns a copy of the peer beacons the extension last reported.
+func (s *Server) PeerBeacons() [][]byte {
+	s.bmu.Lock()
+	defer s.bmu.Unlock()
+	out := make([][]byte, len(s.peers))
+	copy(out, s.peers)
+	return out
+}
+
+func (s *Server) currentBeacon() []byte {
+	s.bmu.Lock()
+	defer s.bmu.Unlock()
+	return s.beacon
+}
+
+func (s *Server) setPeers(beacons [][]byte) {
+	s.bmu.Lock()
+	s.peers = beacons
+	s.bmu.Unlock()
+}
+
+func (s *Server) subscribeBeacon() (<-chan struct{}, func()) {
+	ch := make(chan struct{}, 1)
+	s.bmu.Lock()
+	s.beaconSubs[ch] = struct{}{}
+	s.bmu.Unlock()
+	return ch, func() {
+		s.bmu.Lock()
+		delete(s.beaconSubs, ch)
+		s.bmu.Unlock()
+	}
+}
+
+// Publish implements rendezvous.Signaling: it records this device's sealed
+// beacon and asks the connected extension to write it to storage.sync. selfID is
+// unused — the extension owns its own storage.sync key.
+func (s *Server) Publish(_ context.Context, _ string, sealed []byte) error {
+	s.SetBeacon(sealed)
+	return nil
+}
+
+// Fetch implements rendezvous.Signaling: it returns the peer beacons the
+// extension last reported from storage.sync. Finding none is not an error.
+func (s *Server) Fetch(_ context.Context, _ string) ([][]byte, error) {
+	return s.PeerBeacons(), nil
 }
 
 // ServeHTTP upgrades a request to a WebSocket, authenticates the first frame,
@@ -106,18 +202,27 @@ func (s *Server) authenticate(ctx context.Context, conn *websocket.Conn) bool {
 	return subtle.ConstantTimeCompare([]byte(msg.Token), []byte(s.token)) == 1
 }
 
-// stream pushes the current snapshot, then a fresh one on every model change,
-// with a periodic ping so a dead client is detected and dropped.
+// stream runs the connection after auth: a read pump that takes the extension's
+// reported peer beacons, and this write loop that pushes the initial status +
+// beacon, then a fresh status on every model change, the beacon whenever it
+// changes, and a periodic ping so a dead client is dropped. The single read
+// goroutine also lets coder/websocket process the ping's pong.
 func (s *Server) stream(ctx context.Context, conn *websocket.Conn) error {
-	// CloseRead drains incoming frames in the background (processing pongs and
-	// the client's close), and gives a context that ends when the peer goes away.
-	ctx = conn.CloseRead(ctx)
+	statusCh, unsubStatus := s.model.Subscribe()
+	defer unsubStatus()
+	beaconCh, unsubBeacon := s.subscribeBeacon()
+	defer unsubBeacon()
 
-	changed, unsubscribe := s.model.Subscribe()
-	defer unsubscribe()
+	readErr := make(chan error, 1)
+	go func() { readErr <- s.readLoop(ctx, conn) }()
 
-	if err := s.push(ctx, conn); err != nil { // initial state — never a blank UI
+	if err := s.pushStatus(ctx, conn); err != nil { // initial state — never a blank UI
 		return err
+	}
+	if b := s.currentBeacon(); b != nil {
+		if err := s.pushBeacon(ctx, conn, b); err != nil {
+			return err
+		}
 	}
 
 	ping := time.NewTicker(pingInterval)
@@ -126,8 +231,14 @@ func (s *Server) stream(ctx context.Context, conn *websocket.Conn) error {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case <-changed:
-			if err := s.push(ctx, conn); err != nil {
+		case err := <-readErr:
+			return err
+		case <-statusCh:
+			if err := s.pushStatus(ctx, conn); err != nil {
+				return err
+			}
+		case <-beaconCh:
+			if err := s.pushBeacon(ctx, conn, s.currentBeacon()); err != nil {
 				return err
 			}
 		case <-ping.C:
@@ -141,11 +252,34 @@ func (s *Server) stream(ctx context.Context, conn *websocket.Conn) error {
 	}
 }
 
-// push writes one status snapshot.
-func (s *Server) push(ctx context.Context, conn *websocket.Conn) error {
+// readLoop consumes frames from the extension after auth. Today the only inbound
+// message is "peers" (the beacons the extension sees in storage.sync); unknown
+// types are ignored for forward compatibility. It returns when the connection
+// ends, which is what tears down stream.
+func (s *Server) readLoop(ctx context.Context, conn *websocket.Conn) error {
+	for {
+		var msg clientMsg
+		if err := wsjson.Read(ctx, conn, &msg); err != nil {
+			return err
+		}
+		if msg.Type == "peers" {
+			s.setPeers(msg.Beacons)
+		}
+	}
+}
+
+// pushStatus writes one status snapshot.
+func (s *Server) pushStatus(ctx context.Context, conn *websocket.Conn) error {
 	ctx, cancel := context.WithTimeout(ctx, writeTimeout)
 	defer cancel()
 	return wsjson.Write(ctx, conn, statusMsg{Type: "status", Snapshot: s.model.Snapshot()})
+}
+
+// pushBeacon asks the extension to publish a sealed beacon.
+func (s *Server) pushBeacon(ctx context.Context, conn *websocket.Conn, sealed []byte) error {
+	ctx, cancel := context.WithTimeout(ctx, writeTimeout)
+	defer cancel()
+	return wsjson.Write(ctx, conn, beaconMsg{Type: "beacon", Beacon: sealed})
 }
 
 // Serve binds addr (which must be a loopback address) and serves until ctx is

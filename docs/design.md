@@ -201,13 +201,21 @@ internal/rendezvous/ sealed beacons over a Signaling carrier (shared folder toda
 internal/icewire/    ICE NAT hole-punch + QUIC reliable stream, reusing the pinned identity
 internal/converge/   the reconcile loop (build offer, pull, apply)
 internal/status/     single status source; the "never sync silently" model
-internal/statusws/   token-gated loopback WebSocket that streams the status Snapshot to the extension
+internal/statusws/   token-gated loopback WebSocket: streams status to the extension and carries beacons to/from its storage.sync
 ```
 
 The daemon↔extension channel is a **localhost WebSocket**, not native messaging,
 so there is no native-messaging host to register. It is loopback-only and gated
 by a token derived from the passphrase (`gusset ws-token`) — localhost is not a
-trust boundary, so an unauthenticated socket is closed before it sees any status.
+trust boundary, so an unauthenticated socket is closed before it sees any data.
+
+The same channel is the production beacon carrier. The daemon cannot use the
+`storage.sync` API — only the extension can — so the WS server implements
+`rendezvous.Signaling` by proxy: it pushes this device's sealed beacon to the
+extension to write to `storage.sync`, and the extension reports back the peer
+beacons Firefox Sync brought from the user's other devices. `gusset sync --ws`
+without a `--rendezvous-dir` uses this as the cross-network carrier; the shared
+folder remains the alternative for a setup with no companion extension.
 
 ## Versioning and build
 

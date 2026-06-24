@@ -24,6 +24,7 @@ import (
 	"github.com/justinstimatze/gusset/internal/profile"
 	"github.com/justinstimatze/gusset/internal/rendezvous"
 	"github.com/justinstimatze/gusset/internal/status"
+	"github.com/justinstimatze/gusset/internal/statusws"
 	"github.com/justinstimatze/gusset/internal/store"
 	"github.com/justinstimatze/gusset/internal/transport"
 )
@@ -165,8 +166,10 @@ func syncCmd(args []string) error {
 	}
 
 	ctx := lifetimeContext(*watch, *forDur)
+	var wsServer *statusws.Server
 	if *wsAddr != "" {
-		if err := startStatusWS(ctx, *wsAddr, model, k); err != nil {
+		wsServer, err = startStatusWS(ctx, *wsAddr, model, k)
+		if err != nil {
 			return err
 		}
 	}
@@ -182,7 +185,20 @@ func syncCmd(args []string) error {
 		outcomes, _ = pullFrom([]dialTarget{{addr: *peerAddr, link: status.LinkLAN}}, *peerAddr, pullDeps)
 		<-ctx.Done() // linger so the peer can pull from us within the window
 	default:
-		rzSrc, beacon, devID, sess := setupRendezvous(ctx, *rzDir, *deviceID, *stunServer, host, tcpAddr.Port, k)
+		// The cross-network beacon carrier is a shared folder (--rendezvous-dir)
+		// or, when the companion extension is connected over the WS, the
+		// extension's storage.sync (the WS server is itself a rendezvous.Signaling).
+		var carrier rendezvous.Signaling
+		carrierLabel := ""
+		switch {
+		case *rzDir != "":
+			carrier = rendezvous.DirSignaling{Dir: *rzDir}
+			carrierLabel = *rzDir
+		case wsServer != nil:
+			carrier = wsServer
+			carrierLabel = "the companion extension (storage.sync)"
+		}
+		rzSrc, beacon, devID, sess := setupRendezvous(ctx, carrier, carrierLabel, *deviceID, *stunServer, host, tcpAddr.Port, k)
 		if sess != nil {
 			defer func() { _ = sess.Close() }() // releases the ICE agent if it was never consumed
 		}
@@ -390,22 +406,23 @@ func toExtSync(o converge.Outcome, peer string, now int64) status.ExtSync {
 	return e
 }
 
-// setupRendezvous prepares the Tier-1 peer feed when --rendezvous-dir is set: it
-// gathers this device's beacon (LAN endpoints, plus a STUN reflexive candidate
-// and an ICE hole-punch endpoint when --stun is given), publishes it once so a
-// peer already waiting sees us immediately, and returns the live ICE session for
-// the punch fallback. It returns nils (LAN-only) when no rendezvous dir is
-// configured or the first publish fails. devID is returned for the ICE
+// setupRendezvous prepares the cross-network peer feed when a beacon carrier is
+// available (a shared folder, or the companion extension over the WS): it
+// gathers this device's beacon (LAN endpoints, plus an ICE hole-punch endpoint
+// when --stun is given), publishes it once so a peer already waiting sees us
+// immediately, and returns the live ICE session for the punch fallback. It
+// returns nils (LAN-only) when no carrier is configured or the first publish
+// fails. label names the carrier for the log line. devID is returned for the ICE
 // controlling tie-break.
-func setupRendezvous(ctx context.Context, rzDir, deviceID, stunServer, host string, port int, k *crypto.Keys) (*rendezvousSource, rendezvous.Beacon, string, *icewire.Session) {
-	if rzDir == "" {
+func setupRendezvous(ctx context.Context, carrier rendezvous.Signaling, label, deviceID, stunServer, host string, port int, k *crypto.Keys) (*rendezvousSource, rendezvous.Beacon, string, *icewire.Session) {
+	if carrier == nil {
 		return nil, rendezvous.Beacon{}, "", nil
 	}
 	devID := deviceID
 	if devID == "" {
 		devID = host
 	}
-	src := &rendezvousSource{sig: rendezvous.DirSignaling{Dir: rzDir}, k: k, selfID: devID}
+	src := &rendezvousSource{sig: carrier, k: k, selfID: devID}
 	beacon := gatherBeacon(devID, host, port, time.Now().Unix())
 
 	// A STUN server enables the hole-punch fallback: gather an ICE endpoint and
@@ -427,7 +444,7 @@ func setupRendezvous(ctx context.Context, rzDir, deviceID, stunServer, host stri
 	if beacon.ICE != nil {
 		punch = ", hole-punch enabled"
 	}
-	fmt.Printf("rendezvous: published beacon %q with %d candidate endpoint(s)%s to %s\n", devID, cands, punch, rzDir)
+	fmt.Printf("rendezvous: published beacon %q with %d candidate endpoint(s)%s via %s\n", devID, cands, punch, label)
 	return src, beacon, devID, sess
 }
 

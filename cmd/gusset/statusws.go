@@ -16,12 +16,14 @@ import (
 // startStatusWS brings up the localhost status WebSocket for the run, bound to
 // addr and tied to ctx. It blocks only until the listener is up (or fails fast
 // on a bad/non-loopback address), then leaves the server running in the
-// background. The pairing token is not printed here — `gusset ws-token` prints
-// it on demand, so the secret stays out of every run's scrollback.
-func startStatusWS(ctx context.Context, addr string, model *status.Model, k *crypto.Keys) error {
+// background and returns it — the server doubles as a rendezvous.Signaling, so
+// the caller can use it as the beacon carrier when no shared folder is set. The
+// pairing token is not printed here — `gusset ws-token` prints it on demand, so
+// the secret stays out of every run's scrollback.
+func startStatusWS(ctx context.Context, addr string, model *status.Model, k *crypto.Keys) (*statusws.Server, error) {
 	token, err := statusws.Token(k)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	srv := statusws.NewServer(model, token)
 
@@ -32,11 +34,11 @@ func startStatusWS(ctx context.Context, addr string, model *status.Model, k *cry
 	select {
 	case a := <-ready:
 		fmt.Printf("status: serving live status at ws://%s — pair the extension with `gusset ws-token`\n", a)
-		return nil
+		return srv, nil
 	case err := <-errc:
-		return fmt.Errorf("status WebSocket: %w", err)
+		return nil, fmt.Errorf("status WebSocket: %w", err)
 	case <-time.After(3 * time.Second):
-		return errors.New("status WebSocket: listener did not come up in time")
+		return nil, errors.New("status WebSocket: listener did not come up in time")
 	}
 }
 

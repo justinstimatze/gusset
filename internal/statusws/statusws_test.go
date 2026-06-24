@@ -142,6 +142,105 @@ func TestServe_BindsLoopbackAndServes(t *testing.T) {
 	}
 }
 
+// anyMsg reads any server->client frame so a test can dispatch on type.
+type anyMsg struct {
+	Type     string          `json:"type"`
+	Snapshot status.Snapshot `json:"snapshot"`
+	Beacon   []byte          `json:"beacon"`
+}
+
+func readAny(t *testing.T, ctx context.Context, conn *websocket.Conn) anyMsg {
+	t.Helper()
+	var msg anyMsg
+	if err := wsjson.Read(ctx, conn, &msg); err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	return msg
+}
+
+func eventually(t *testing.T, cond func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if cond() {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("condition not met within timeout")
+}
+
+func TestServer_PublishPushesBeaconToClient(t *testing.T) {
+	s := NewServer(status.New(), testToken)
+	s.SetBeacon([]byte("sealed-beacon-one")) // set before any client connects
+	srv := httptest.NewServer(s)
+	defer srv.Close()
+
+	conn, ctx := dialAuthed(t, srv, testToken)
+	defer func() { _ = conn.CloseNow() }()
+
+	// On connect the client gets the current status and the pending beacon.
+	got := map[string]anyMsg{}
+	for i := 0; i < 2; i++ {
+		m := readAny(t, ctx, conn)
+		got[m.Type] = m
+	}
+	if _, ok := got["status"]; !ok {
+		t.Fatal("client never received initial status")
+	}
+	if string(got["beacon"].Beacon) != "sealed-beacon-one" {
+		t.Fatalf("beacon not delivered on connect: %q", got["beacon"].Beacon)
+	}
+
+	// A new beacon is pushed live.
+	s.SetBeacon([]byte("sealed-beacon-two"))
+	m := readAny(t, ctx, conn)
+	if m.Type != "beacon" || string(m.Beacon) != "sealed-beacon-two" {
+		t.Fatalf("updated beacon not pushed: %+v", m)
+	}
+}
+
+func TestServer_ReportedPeersAreFetchable(t *testing.T) {
+	s := NewServer(status.New(), testToken)
+	srv := httptest.NewServer(s)
+	defer srv.Close()
+
+	conn, ctx := dialAuthed(t, srv, testToken)
+	defer func() { _ = conn.CloseNow() }()
+	readAny(t, ctx, conn) // drain the initial status
+
+	// The extension reports the peer beacons it sees in storage.sync.
+	want := [][]byte{[]byte("peer-A-sealed"), []byte("peer-B-sealed")}
+	if err := wsjson.Write(ctx, conn, clientMsg{Type: "peers", Beacons: want}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Fetch (the Signaling method) returns them once the read pump has processed.
+	eventually(t, func() bool { return len(s.PeerBeacons()) == 2 })
+	got, err := s.Fetch(context.Background(), "self")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 || string(got[0]) != "peer-A-sealed" || string(got[1]) != "peer-B-sealed" {
+		t.Fatalf("Fetch returned the wrong peers: %q", got)
+	}
+}
+
+func TestServer_SignalingMethods(t *testing.T) {
+	s := NewServer(status.New(), testToken)
+	if err := s.Publish(context.Background(), "self", []byte("my-beacon")); err != nil {
+		t.Fatal(err)
+	}
+	if string(s.currentBeacon()) != "my-beacon" {
+		t.Fatalf("Publish did not store the beacon: %q", s.currentBeacon())
+	}
+	s.setPeers([][]byte{[]byte("p1")})
+	got, _ := s.Fetch(context.Background(), "self")
+	if len(got) != 1 || string(got[0]) != "p1" {
+		t.Fatalf("Fetch did not reflect reported peers: %q", got)
+	}
+}
+
 func TestToken_DeterministicAndKeyScoped(t *testing.T) {
 	k1, err := crypto.DeriveKeys("correct horse battery staple lorem", crypto.AppSalt)
 	if err != nil {
