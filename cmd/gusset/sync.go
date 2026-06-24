@@ -439,11 +439,32 @@ func pullFrom(targets []dialTarget, peerID, peerName string, deps pullContext) (
 	}
 	for _, o := range outcomes {
 		deps.model.SetExtSync(toExtSync(o, peerID, now))
-		if o.Action == converge.Applied {
-			deps.model.Log(now, status.LogOK, "applied "+o.Extension+" from "+label)
+		if level, msg, ok := outcomeLogLine(o, label); ok {
+			deps.model.Log(now, level, msg)
 		}
 	}
 	return outcomes, true
+}
+
+// outcomeLogLine maps a reconcile Outcome onto an activity-log line, so a tester
+// can see why a sync did (or didn't) change anything. It returns ok=false for
+// outcomes that should not be logged — LocalNewer, the common no-op, is kept out
+// so it can't flood the bounded ring. Only the extension id and the peer label
+// (both already shown in the UI) ever appear; never data values. label is the
+// peer's display label as computed in pullFrom.
+func outcomeLogLine(o converge.Outcome, label string) (status.LogLevel, string, bool) {
+	switch o.Action {
+	case converge.Applied:
+		return status.LogOK, "applied " + o.Extension + " from " + label, true
+	case converge.Locked:
+		return status.LogWarn, "fetched " + o.Extension + " from " + label + " — close Firefox to apply", true
+	case converge.Blocked:
+		return status.LogWarn, o.Extension + " offered by " + label + " is not allowed here — run gusset allow", true
+	case converge.Failed:
+		return status.LogError, "couldn't sync " + o.Extension + " from " + label, true
+	default: // LocalNewer and any future no-op action
+		return "", "", false
+	}
 }
 
 // toExtSync maps a reconcile Outcome onto a status entry.
