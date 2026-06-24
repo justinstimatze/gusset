@@ -72,6 +72,14 @@ export class DaemonClient {
     this.ws.send(JSON.stringify(msg));
   }
 
+  // sendName asks the daemon to rename this device. Returns false if not
+  // connected (the user must be connected to rename).
+  sendName(name: string): boolean {
+    if (this.ws?.readyState !== WebSocket.OPEN) return false;
+    this.ws.send(JSON.stringify({ type: "set-name", name }));
+    return true;
+  }
+
   getState(): ConnState {
     return this.state;
   }

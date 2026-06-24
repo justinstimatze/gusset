@@ -17,8 +17,10 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	"github.com/coder/websocket"
 	"github.com/coder/websocket/wsjson"
@@ -79,11 +81,15 @@ type beaconMsg struct {
 }
 
 // clientMsg is a frame from the extension after auth. The first frame is authMsg;
-// every frame after it is a clientMsg (today only "peers").
+// every frame after it is a clientMsg ("peers" or "set-name").
 type clientMsg struct {
 	Type    string   `json:"type"`
-	Beacons [][]byte `json:"beacons,omitempty"`
+	Beacons [][]byte `json:"beacons,omitempty"` // for "peers"
+	Name    string   `json:"name,omitempty"`    // for "set-name"
 }
+
+// maxNameLen bounds a UI-supplied device name.
+const maxNameLen = 64
 
 // Server streams a status.Model over a token-gated localhost WebSocket and
 // carries beacons to and from the connected extension. It implements
@@ -97,6 +103,30 @@ type Server struct {
 	beacon     []byte   // this device's sealed beacon, pushed to the extension to publish
 	peers      [][]byte // peer beacons the extension last reported from storage.sync
 	beaconSubs map[chan struct{}]struct{}
+	onSetName  func(string) // optional handler for a UI device rename
+}
+
+// OnSetName registers a handler invoked when the extension renames the device.
+// The name is already trimmed, length-capped, and stripped of control runes.
+func (s *Server) OnSetName(fn func(string)) {
+	s.bmu.Lock()
+	s.onSetName = fn
+	s.bmu.Unlock()
+}
+
+// cleanName trims, length-caps, and removes non-printable runes from a
+// UI-supplied device name (it is the user's own, but still untrusted input).
+func cleanName(s string) string {
+	s = strings.TrimSpace(s)
+	if len(s) > maxNameLen {
+		s = s[:maxNameLen]
+	}
+	return strings.Map(func(r rune) rune {
+		if unicode.IsPrint(r) {
+			return r
+		}
+		return -1
+	}, s)
 }
 
 var _ rendezvous.Signaling = (*Server)(nil)
@@ -252,18 +282,28 @@ func (s *Server) stream(ctx context.Context, conn *websocket.Conn) error {
 	}
 }
 
-// readLoop consumes frames from the extension after auth. Today the only inbound
-// message is "peers" (the beacons the extension sees in storage.sync); unknown
-// types are ignored for forward compatibility. It returns when the connection
-// ends, which is what tears down stream.
+// readLoop consumes frames from the extension after auth: "peers" (the beacons
+// the extension sees in storage.sync) and "set-name" (a UI device rename).
+// Unknown types are ignored for forward compatibility. It returns when the
+// connection ends, which is what tears down stream.
 func (s *Server) readLoop(ctx context.Context, conn *websocket.Conn) error {
 	for {
 		var msg clientMsg
 		if err := wsjson.Read(ctx, conn, &msg); err != nil {
 			return err
 		}
-		if msg.Type == "peers" {
+		switch msg.Type {
+		case "peers":
 			s.setPeers(msg.Beacons)
+		case "set-name":
+			if name := cleanName(msg.Name); name != "" {
+				s.bmu.Lock()
+				fn := s.onSetName
+				s.bmu.Unlock()
+				if fn != nil {
+					fn(name)
+				}
+			}
 		}
 	}
 }

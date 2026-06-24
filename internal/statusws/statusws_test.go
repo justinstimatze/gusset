@@ -226,6 +226,32 @@ func TestServer_ReportedPeersAreFetchable(t *testing.T) {
 	}
 }
 
+func TestServer_SetNameInvokesHandlerAndCleansInput(t *testing.T) {
+	s := NewServer(status.New(), testToken)
+	got := make(chan string, 1)
+	s.OnSetName(func(n string) { got <- n })
+	srv := httptest.NewServer(s)
+	defer srv.Close()
+
+	conn, ctx := dialAuthed(t, srv, testToken)
+	defer func() { _ = conn.CloseNow() }()
+	readAny(t, ctx, conn) // drain initial status
+
+	// A name with surrounding space and a control byte must arrive trimmed and
+	// stripped (it is the user's own input, but still untrusted).
+	if err := wsjson.Write(ctx, conn, clientMsg{Type: "set-name", Name: "  My Box\x07  "}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case n := <-got:
+		if n != "My Box" {
+			t.Fatalf("name not cleaned: %q", n)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("OnSetName handler was not invoked")
+	}
+}
+
 func TestServer_SignalingMethods(t *testing.T) {
 	s := NewServer(status.New(), testToken)
 	if err := s.Publish(context.Background(), "self", []byte("my-beacon")); err != nil {

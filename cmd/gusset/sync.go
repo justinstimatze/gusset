@@ -10,6 +10,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -174,6 +175,10 @@ func syncCmd(args []string) error {
 		devName = *deviceName
 	}
 	model.SetSelf(devID, devName)
+	// deviceNamePtr is the live device name: it seeds the beacon each pass and is
+	// updated atomically when the UI renames the device (set-name over the WS).
+	var deviceNamePtr atomic.Pointer[string]
+	deviceNamePtr.Store(&devName)
 
 	tcpAddr, ok := srv.Addr().(*net.TCPAddr)
 	if !ok {
@@ -195,9 +200,21 @@ func syncCmd(args []string) error {
 		if err != nil {
 			return err
 		}
+		// Let the dashboard rename this device: persist it, update the live "this
+		// device" label, and refresh the name future beacons carry. mDNS is
+		// unaffected (it never broadcasts the friendly name), so no re-advertise.
+		wsServer.OnSetName(func(name string) {
+			deviceNamePtr.Store(&name)
+			model.SetSelf(devID, name)
+			cfg.DeviceName = name
+			if serr := cfg.Save(); serr != nil {
+				fmt.Fprintf(os.Stderr, "couldn't persist new device name: %v\n", serr)
+			}
+			model.Log(time.Now().Unix(), status.LogInfo, "renamed this device to "+name)
+		})
 	}
 	target := store.NewFirefox(profDir)
-	pullDeps := pullContext{id: id, target: target, k: k, localCat: localCat, allow: allow, workDir: workDir, model: model, offer: offer}
+	pullDeps := pullContext{id: id, target: target, k: k, localCat: localCat, allow: allow, workDir: workDir, model: model, offer: offer, deviceName: &deviceNamePtr}
 
 	var outcomes []converge.Outcome
 	switch {
@@ -287,6 +304,9 @@ type pullContext struct {
 	offer      transport.ChunkSource
 	iceSession *icewire.Session
 	selfID     string
+	// deviceName is the live friendly name, re-read into the beacon each pass so
+	// a UI rename propagates to peers without a restart.
+	deviceName *atomic.Pointer[string]
 }
 
 // dialTarget is one candidate address for a peer, tagged with the link kind it
@@ -333,6 +353,9 @@ func runDiscoveryLoop(ctx context.Context, selfID string, deps pullContext, rz *
 // while the window is open) and pulls from each newly-seen Tier-1 peer.
 func rendezvousPass(ctx context.Context, rz *rendezvousSource, beacon rendezvous.Beacon, handled map[string]bool, deps pullContext) []converge.Outcome {
 	beacon.IssuedAt = time.Now().Unix()
+	if deps.deviceName != nil {
+		beacon.Name = *deps.deviceName.Load() // pick up a UI rename without a restart
+	}
 	if err := rz.publish(ctx, beacon); err != nil {
 		fmt.Fprintf(os.Stderr, "rendezvous: re-publish: %v\n", err)
 	}

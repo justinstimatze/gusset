@@ -14,10 +14,11 @@ import {
   saveSettings,
 } from "@/lib/settings";
 
-// PopupMsg is the popup -> background message protocol.
+// PopupMsg is the UI -> background message protocol.
 type PopupMsg =
   | { type: "get-state" }
-  | { type: "save-settings"; settings: Settings };
+  | { type: "save-settings"; settings: Settings }
+  | { type: "set-device-name"; name: string };
 
 export default defineBackground(() => {
   let client: DaemonClient | null = null;
@@ -84,6 +85,10 @@ export default defineBackground(() => {
         await start(msg.settings);
         sendResponse({ ok: true });
       });
+      return true;
+    }
+    if (msg.type === "set-device-name") {
+      sendResponse({ ok: client?.sendName(msg.name) ?? false });
       return true;
     }
     return false;
