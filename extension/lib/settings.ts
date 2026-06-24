@@ -13,6 +13,12 @@ const KEY = "gusset:settings";
 
 export const DEFAULT_WS_URL = "ws://127.0.0.1:8765";
 
+// Where to send a user who has the extension but not the companion app. The
+// extension is sandboxed — it cannot bundle, install, or launch the native
+// binary — so the most it can do is point at the download. Releases is the
+// canonical surface: prebuilt binaries land there for non-technical users.
+export const INSTALL_URL = "https://github.com/justinstimatze/gusset/releases";
+
 export async function loadSettings(): Promise<Settings> {
   const got = await browser.storage.local.get(KEY);
   const s = got[KEY] as Partial<Settings> | undefined;

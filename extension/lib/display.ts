@@ -19,7 +19,7 @@ export const connMeta: Record<
   offline: {
     dot: "bg-[var(--err)]",
     label: "Daemon not running",
-    hint: "Start it with `gusset sync --ws`.",
+    hint: "Start it with `gusset sync --ws` — or install the gusset app if you don’t have it yet.",
   },
   "auth-failed": {
     dot: "bg-[var(--err)]",

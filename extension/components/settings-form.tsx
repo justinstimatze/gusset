@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { browser } from "wxt/browser";
-import { DEFAULT_WS_URL } from "@/lib/settings";
+import { DEFAULT_WS_URL, INSTALL_URL } from "@/lib/settings";
 
 // SettingsForm pairs the extension with the daemon: the loopback WebSocket
 // address and the token from `gusset ws-token`. Used by both the popup and the
@@ -29,9 +29,31 @@ export function SettingsForm({
 
   return (
     <form onSubmit={save} className="space-y-3">
+      <div className="space-y-1 rounded bg-[var(--panel)] px-3 py-2 text-xs text-[var(--ink-dim)]">
+        <p>
+          gusset has two parts: this extension and a small companion app that
+          runs on this computer. The extension talks to it over a local
+          connection — it can’t sync on its own, and (being sandboxed) can’t
+          install or start the app for you.
+        </p>
+        <p>
+          <strong className="font-medium text-[var(--ink)]">
+            Don’t have the app yet?
+          </strong>{" "}
+          <a
+            href={INSTALL_URL}
+            target="_blank"
+            rel="noreferrer"
+            className="text-[var(--accent)] underline underline-offset-2"
+          >
+            Install gusset →
+          </a>
+        </p>
+      </div>
       <p className="text-xs text-[var(--ink-dim)]">
-        Pair with your running daemon. Get the token with{" "}
-        <code className="rounded bg-[var(--panel)] px-1">gusset ws-token</code>.
+        Already running it? Get the token with{" "}
+        <code className="rounded bg-[var(--panel)] px-1">gusset ws-token</code>{" "}
+        and paste both below.
       </p>
       <Field
         label="Daemon address"
