@@ -14,8 +14,12 @@ builds:
       - arm64
     flags:
       - -trimpath
+    # Stamp the version from the git tag (matches the Makefile's -X main.version),
+    # so `gusset version` on a release binary reports the tag, not "dev". Without
+    # this explicit flag the overridden ldflags drop goreleaser's default
+    # main.version injection.
     ldflags:
-      - -s -w
+      - -s -w -X main.version={{ .Tag }}
 
 archives:
   - id: default
@@ -39,3 +43,9 @@ release:
     name: gusset
   draft: false
   prerelease: auto
+  # Attach the prebuilt companion extension (built by the release workflow before
+  # goreleaser runs) so friends can download it from the release page without a
+  # local toolchain. It is an unsigned zip — load via about:debugging until the
+  # AMO-signed .xpi lands.
+  extra_files:
+    - glob: extension/.output/*-firefox.zip
