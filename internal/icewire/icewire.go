@@ -75,12 +75,17 @@ func Gather(ctx context.Context, cfg Config) (*Session, error) {
 		urls = append(urls, parsed)
 	}
 
-	agent, err := ice.NewAgent(&ice.AgentConfig{
-		Urls:             urls,
-		NetworkTypes:     []ice.NetworkType{ice.NetworkTypeUDP4},
-		MulticastDNSMode: ice.MulticastDNSModeDisabled,
-		Net:              cfg.Net,
-	})
+	opts := []ice.AgentOption{
+		ice.WithUrls(urls),
+		ice.WithNetworkTypes([]ice.NetworkType{ice.NetworkTypeUDP4}),
+		ice.WithMulticastDNSMode(ice.MulticastDNSModeDisabled),
+	}
+	// cfg.Net is nil in production (use the real network); only the vnet tests set
+	// it. Passing WithNet(nil) would override that default, so add it only when set.
+	if cfg.Net != nil {
+		opts = append(opts, ice.WithNet(cfg.Net))
+	}
+	agent, err := ice.NewAgentWithOptions(opts...)
 	if err != nil {
 		return nil, fmt.Errorf("icewire: new agent: %w", err)
 	}
