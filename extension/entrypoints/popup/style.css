@@ -1,11 +1,9 @@
 @import "tailwindcss";
+@import "../../assets/theme.css";
+@source "../../components";
+@source "../../lib";
 
 /* Firefox sizes a popup to the body's width — set it here, not on :root. */
-html,
-body {
-  margin: 0;
-}
 body {
   width: 340px;
-  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
 }

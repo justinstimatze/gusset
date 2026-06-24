@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+- Extension UI given a Firefox-native visual identity (Mozilla Acorn direction):
+  the surface follows Firefox's own in-content palette via `light-dark()` tokens
+  (one token per role, no dark: variants), the Firefox blue accent, and the
+  Firefox semantic status colors — with a single brand flourish, the aurora as a
+  hairline. Replaces the generic shadcn-gray look.
+- Sync progress is now visible: an "Active transfers" panel shows a determinate
+  bar when the chunk total is known and an indeterminate sweep otherwise, so a
+  slow sync visibly reads as "still working" rather than stalled (the popup says
+  so too). `status.ExtSync` gained a `Total` for the determinate case.
+- Activity log: the daemon keeps a small in-memory ring of recent events
+  (`status.Model.Log`, carried in the Snapshot) and the dashboard renders it as a
+  level-colored Activity panel, so a user can check what happened when a sync
+  doesn't work. Privacy-first by construction — local-only, ephemeral, never
+  synced or persisted; it records events, counts, and ids, never the passphrase,
+  tokens, sealed bytes, or any extension data value.
 - The extension's TypeScript runs under a strict regime: `tsconfig` adds
   `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`, `verbatimModuleSyntax`,
   `noUnusedLocals`/`noUnusedParameters`, `noImplicitOverride`/`noImplicitReturns`,

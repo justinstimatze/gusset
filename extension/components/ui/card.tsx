@@ -11,7 +11,7 @@ export function Card({
   return (
     <div
       className={cn(
-        "rounded-lg border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900",
+        "rounded-md border border-[var(--line)] bg-[var(--canvas)]",
         className,
       )}
     >
@@ -28,19 +28,18 @@ export function CardHeader({
   children: ReactNode;
 }) {
   return (
-    <div
-      className={cn(
-        "border-b border-zinc-100 px-4 py-3 dark:border-zinc-800",
-        className,
-      )}
-    >
+    <div className={cn("border-b border-[var(--line)] px-4 py-2.5", className)}>
       {children}
     </div>
   );
 }
 
 export function CardTitle({ children }: { children: ReactNode }) {
-  return <h2 className="text-sm font-semibold tracking-tight">{children}</h2>;
+  return (
+    <h2 className="text-xs font-semibold uppercase tracking-wide text-[var(--ink-dim)]">
+      {children}
+    </h2>
+  );
 }
 
 export function CardContent({

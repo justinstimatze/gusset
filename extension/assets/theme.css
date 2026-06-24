@@ -1,0 +1,67 @@
+/* gusset's surface follows Firefox's own in-content palette so the extension
+ * feels native in the browser, light or dark. Tokens use the CSS light-dark()
+ * function (the approach Mozilla's Acorn design system uses), so a single token
+ * resolves per the user's browser theme — no dark: variants needed. Personality
+ * is rationed to one element: the Firefox brand aurora, used as a hairline only.
+ */
+:root {
+  color-scheme: light dark;
+
+  /* Surfaces — Firefox in-content light / dark. */
+  --canvas: light-dark(#ffffff, #1c1b22);
+  --panel: light-dark(#f7f7fb, #2b2a33);
+  --panel-2: light-dark(#ededf2, #38373f);
+  --line: light-dark(#d7d7db, #4a4a55);
+  --ink: light-dark(#15141a, #fbfbfe);
+  --ink-dim: light-dark(#5b5b66, #b1b1bd);
+
+  /* Accent — Firefox blue (blue-60 light, brighter on dark). */
+  --accent: light-dark(#0060df, #0a84ff);
+  --accent-strong: light-dark(#0050c0, #2b9bff);
+  --on-accent: #ffffff;
+
+  /* Status — Firefox semantic colors + a translucent tint that works on either
+   * theme (it mixes over whatever surface is behind it). */
+  --ok: light-dark(#017a40, #5ddf9c);
+  --warn: light-dark(#8a6a00, #ffbd4f);
+  --err: light-dark(#c50042, #ff9aa2);
+  --info: var(--accent);
+  --neutral: var(--ink-dim);
+
+  --ok-bg: color-mix(in oklab, var(--ok) 14%, transparent);
+  --warn-bg: color-mix(in oklab, var(--warn) 16%, transparent);
+  --err-bg: color-mix(in oklab, var(--err) 14%, transparent);
+  --info-bg: color-mix(in oklab, var(--info) 14%, transparent);
+  --neutral-bg: color-mix(in oklab, var(--neutral) 14%, transparent);
+
+  /* The Firefox brand aurora — orange → red → magenta → violet. One hairline. */
+  --aurora: linear-gradient(90deg, #ff9416, #ff2a64, #c42aef, #6f2ae6);
+}
+
+body {
+  margin: 0;
+  background: var(--canvas);
+  color: var(--ink);
+  font-family:
+    system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+
+/* Indeterminate progress sweep — signals a slow sync is still moving. */
+@keyframes gusset-sweep {
+  0% {
+    transform: translateX(-110%);
+  }
+  100% {
+    transform: translateX(310%);
+  }
+}
+.gusset-sweep {
+  animation: gusset-sweep 1.4s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .gusset-sweep {
+    animation: none;
+    width: 100%;
+    opacity: 0.65;
+  }
+}

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { browser } from "wxt/browser";
+import { Progress } from "@/components/ui/progress";
 import { connMeta, peerDot } from "@/lib/display";
 import { DEFAULT_WS_URL } from "@/lib/settings";
 import { type BgState, useDaemonState } from "@/lib/use-daemon-state";
@@ -7,19 +8,17 @@ import { type BgState, useDaemonState } from "@/lib/use-daemon-state";
 function App() {
   const { state, refresh } = useDaemonState(1500);
   const [editing, setEditing] = useState(false);
-
-  // Drop into the settings form automatically until configured.
   const showForm = editing || (state !== null && !state.configured);
 
   return (
-    <main className="min-h-[180px] bg-white p-4 text-sm text-zinc-800 dark:bg-zinc-900 dark:text-zinc-100">
+    <main className="min-h-[180px] bg-[var(--canvas)] p-4 text-sm text-[var(--ink)]">
       <header className="mb-3 flex items-center justify-between">
         <h1 className="text-base font-semibold tracking-tight">gusset</h1>
         {state?.configured && (
           <button
             type="button"
             onClick={() => setEditing((e) => !e)}
-            className="rounded px-2 py-1 text-xs text-zinc-500 hover:bg-zinc-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500 dark:text-zinc-400 dark:hover:bg-zinc-800"
+            className="rounded px-2 py-1 text-xs text-[var(--ink-dim)] hover:bg-[var(--panel)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--accent)]"
           >
             {editing ? "Done" : "Settings"}
           </button>
@@ -27,7 +26,7 @@ function App() {
       </header>
 
       {state === null ? (
-        <p className="text-zinc-500">Loading…</p>
+        <p className="text-[var(--ink-dim)]">Loading…</p>
       ) : showForm ? (
         <SettingsForm
           wsUrl={state.wsUrl}
@@ -46,7 +45,9 @@ function App() {
 function Status({ state }: { state: BgState }) {
   const meta = connMeta[state.connState];
   const { peers, extensions } = state.snapshot;
-  const inFlight = extensions.filter((e) => e.state !== "in-sync").length;
+  const inFlight = extensions.filter(
+    (e) => e.state === "pushing" || e.state === "pulling",
+  ).length;
 
   return (
     <div className="space-y-3">
@@ -57,33 +58,29 @@ function Status({ state }: { state: BgState }) {
         <div>
           <div className="font-medium">{meta.label}</div>
           {meta.hint && (
-            <div className="text-xs text-zinc-500 dark:text-zinc-400">
-              {meta.hint}
-            </div>
+            <div className="text-xs text-[var(--ink-dim)]">{meta.hint}</div>
           )}
         </div>
       </div>
 
       {state.connState === "connected" && (
         <>
-          <dl className="grid grid-cols-2 gap-2">
-            <Stat
-              n={peers.length}
-              label={peers.length === 1 ? "device" : "devices"}
-            />
-            <Stat
-              n={inFlight}
-              label="in flight"
-              sub={`${extensions.length} tracked`}
-            />
-          </dl>
+          {inFlight > 0 && (
+            <div className="space-y-1">
+              <div className="flex justify-between text-xs text-[var(--ink-dim)]">
+                <span>Syncing {inFlight}…</span>
+                <span>still working</span>
+              </div>
+              <Progress fraction={null} />
+            </div>
+          )}
 
           {peers.length > 0 ? (
             <ul className="space-y-1">
               {peers.map((p) => (
                 <li
                   key={p.device_id}
-                  className="flex items-center gap-2 rounded bg-zinc-50 px-2 py-1.5 dark:bg-zinc-800"
+                  className="flex items-center gap-2 rounded bg-[var(--panel)] px-2 py-1.5"
                 >
                   <span
                     className={`h-2 w-2 shrink-0 rounded-full ${peerDot[p.state]}`}
@@ -91,14 +88,14 @@ function Status({ state }: { state: BgState }) {
                   <span className="truncate font-medium">
                     {p.name || p.device_id}
                   </span>
-                  <span className="ml-auto text-xs text-zinc-500 dark:text-zinc-400">
+                  <span className="ml-auto text-xs text-[var(--ink-dim)]">
                     {p.state}
                   </span>
                 </li>
               ))}
             </ul>
           ) : (
-            <p className="rounded bg-zinc-50 px-2 py-2 text-xs text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400">
+            <p className="rounded bg-[var(--panel)] px-2 py-2 text-xs text-[var(--ink-dim)]">
               No devices paired yet. Run gusset on another machine with the same
               passphrase.
             </p>
@@ -107,22 +104,12 @@ function Status({ state }: { state: BgState }) {
           <button
             type="button"
             onClick={() => void browser.runtime.openOptionsPage()}
-            className="w-full rounded border border-zinc-200 py-1.5 text-xs font-medium hover:bg-zinc-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500 dark:border-zinc-700 dark:hover:bg-zinc-800"
+            className="w-full rounded border border-[var(--line)] py-1.5 text-xs font-medium hover:bg-[var(--panel)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--accent)]"
           >
             Open dashboard
           </button>
         </>
       )}
-    </div>
-  );
-}
-
-function Stat({ n, label, sub }: { n: number; label: string; sub?: string }) {
-  return (
-    <div className="rounded bg-zinc-50 px-2 py-1.5 dark:bg-zinc-800">
-      <div className="text-lg font-semibold tabular-nums">{n}</div>
-      <div className="text-xs text-zinc-500 dark:text-zinc-400">{label}</div>
-      {sub && <div className="text-[10px] text-zinc-400">{sub}</div>}
     </div>
   );
 }
@@ -151,12 +138,9 @@ function SettingsForm({
 
   return (
     <form onSubmit={save} className="space-y-3">
-      <p className="text-xs text-zinc-500 dark:text-zinc-400">
+      <p className="text-xs text-[var(--ink-dim)]">
         Pair this with your running daemon. Get the token with{" "}
-        <code className="rounded bg-zinc-100 px-1 dark:bg-zinc-800">
-          gusset ws-token
-        </code>
-        .
+        <code className="rounded bg-[var(--panel)] px-1">gusset ws-token</code>.
       </p>
       <Field
         label="Daemon address"
@@ -174,7 +158,7 @@ function SettingsForm({
       <button
         type="submit"
         disabled={saving}
-        className="w-full rounded bg-blue-600 py-2 font-medium text-white hover:bg-blue-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 disabled:opacity-60"
+        className="w-full rounded bg-[var(--accent)] py-2 font-medium text-[var(--on-accent)] hover:bg-[var(--accent-strong)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)] disabled:opacity-60"
       >
         {saving ? "Saving…" : "Save & connect"}
       </button>
@@ -197,7 +181,7 @@ function Field({
 }) {
   return (
     <label className="block">
-      <span className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-300">
+      <span className="mb-1 block text-xs font-medium text-[var(--ink-dim)]">
         {label}
       </span>
       <input
@@ -205,7 +189,7 @@ function Field({
         value={value}
         placeholder={placeholder}
         onChange={(e) => onChange(e.target.value)}
-        className="w-full rounded border border-zinc-300 bg-white px-2 py-1.5 text-sm focus-visible:border-blue-500 focus-visible:outline focus-visible:outline-1 focus-visible:outline-blue-500 dark:border-zinc-700 dark:bg-zinc-800"
+        className="w-full rounded border border-[var(--line)] bg-[var(--canvas)] px-2 py-1.5 text-sm focus-visible:border-[var(--accent)] focus-visible:outline focus-visible:outline-1 focus-visible:outline-[var(--accent)]"
       />
     </label>
   );

@@ -81,15 +81,43 @@ type ExtSync struct {
 	DeviceID  string    `json:"device_id"`
 	State     SyncState `json:"state"`
 	Remaining int       `json:"remaining,omitempty"` // chunks left, for Pushing/Pulling
+	Total     int       `json:"total,omitempty"`     // total chunks this transfer, for a determinate progress bar
 	Detail    string    `json:"detail,omitempty"`    // override hint / error detail
 	Since     int64     `json:"since"`
 }
 
+// LogLevel classifies an activity-log entry for display.
+type LogLevel string
+
+const (
+	LogInfo  LogLevel = "info"
+	LogOK    LogLevel = "ok"
+	LogWarn  LogLevel = "warn"
+	LogError LogLevel = "error"
+)
+
+// LogEntry is one activity-log line. The log exists so a user can check what
+// gusset did when a sync doesn't work. It is privacy-first by construction: log
+// events, counts, and ids (extension ids and device labels — already shown in
+// the UI) — never the passphrase, tokens, sealed bytes, or any extension data
+// value. The log lives only in memory, is shown only to the local extension over
+// the loopback WebSocket, and is never synced or written to disk.
+type LogEntry struct {
+	Time    int64    `json:"time"` // caller-supplied unix seconds
+	Level   LogLevel `json:"level"`
+	Message string   `json:"message"`
+}
+
+// maxLog bounds the in-memory activity ring. Old entries fall off — gusset keeps
+// no durable history.
+const maxLog = 50
+
 // Snapshot is an immutable, JSON-marshalable view of the whole model — the one
 // shape all three surfaces render. Slices are sorted for stable output.
 type Snapshot struct {
-	Peers      []Peer    `json:"peers"`
-	Extensions []ExtSync `json:"extensions"`
+	Peers      []Peer     `json:"peers"`
+	Extensions []ExtSync  `json:"extensions"`
+	Log        []LogEntry `json:"log"`
 }
 
 // Model is the concurrency-safe live status. The daemon mutates it from several
@@ -99,6 +127,7 @@ type Model struct {
 	mu    sync.Mutex
 	peers map[string]Peer
 	exts  map[string]ExtSync
+	log   []LogEntry
 	subs  map[chan struct{}]struct{}
 }
 
@@ -109,6 +138,20 @@ func New() *Model {
 		exts:  map[string]ExtSync{},
 		subs:  map[chan struct{}]struct{}{},
 	}
+}
+
+// Log appends an activity entry (now is caller-supplied unix seconds, as
+// elsewhere in gusset). Keep messages to non-sensitive facts — events, counts,
+// extension ids, device labels — never secrets or data values; see LogEntry. The
+// ring is bounded by maxLog.
+func (m *Model) Log(now int64, level LogLevel, message string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.log = append(m.log, LogEntry{Time: now, Level: level, Message: message})
+	if len(m.log) > maxLog {
+		m.log = m.log[len(m.log)-maxLog:]
+	}
+	m.notify()
 }
 
 // Subscribe registers for change notifications. It returns a channel that
@@ -180,6 +223,11 @@ func (m *Model) Snapshot() Snapshot {
 	snap := Snapshot{
 		Peers:      make([]Peer, 0, len(m.peers)),
 		Extensions: make([]ExtSync, 0, len(m.exts)),
+		Log:        make([]LogEntry, 0, len(m.log)),
+	}
+	// Newest first — the UI reads top-down.
+	for i := len(m.log) - 1; i >= 0; i-- {
+		snap.Log = append(snap.Log, m.log[i])
 	}
 	for _, p := range m.peers {
 		snap.Peers = append(snap.Peers, p)

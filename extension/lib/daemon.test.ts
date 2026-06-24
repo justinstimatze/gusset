@@ -87,7 +87,7 @@ describe("DaemonClient", () => {
     const ws = last(FakeWS.instances);
     ws.open();
 
-    const snap: Snapshot = { peers: [], extensions: [] };
+    const snap: Snapshot = { peers: [], extensions: [], log: [] };
     ws.message({ type: "status", snapshot: snap });
     ws.message({ type: "beacon", beacon: "sealed" });
 

@@ -365,10 +365,12 @@ func pullFrom(targets []dialTarget, name string, deps pullContext) ([]converge.O
 			DeviceID: name, State: status.Unreachable,
 			Reason: status.PeerOffline, Detail: err.Error(), Since: now,
 		})
+		deps.model.Log(now, status.LogWarn, "couldn't reach "+name)
 		return nil, false
 	}
 	defer func() { _ = client.Close() }()
 	deps.model.SetPeer(status.Peer{DeviceID: name, State: status.Connected, Link: link, Since: now})
+	deps.model.Log(now, status.LogInfo, "connected to "+name+" over "+string(link))
 
 	outcomes, err := converge.Pull(client, deps.target, deps.k, deps.localCat, deps.allow, deps.workDir)
 	if err != nil {
@@ -376,10 +378,14 @@ func pullFrom(targets []dialTarget, name string, deps pullContext) ([]converge.O
 			DeviceID: name, State: status.Unreachable,
 			Reason: status.AuthFailed, Detail: err.Error(), Since: now,
 		})
+		deps.model.Log(now, status.LogError, "sync with "+name+" failed")
 		return nil, true // connected, but the reconcile failed — not a dial failure
 	}
 	for _, o := range outcomes {
 		deps.model.SetExtSync(toExtSync(o, name, now))
+		if o.Action == converge.Applied {
+			deps.model.Log(now, status.LogOK, "applied "+o.Extension+" from "+name)
+		}
 	}
 	return outcomes, true
 }

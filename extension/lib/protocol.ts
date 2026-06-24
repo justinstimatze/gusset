@@ -41,14 +41,24 @@ export interface ExtSync {
   extension: string;
   device_id: string;
   state: SyncState;
-  remaining?: number;
+  remaining?: number; // chunks left, for pushing/pulling
+  total?: number; // total chunks this transfer, for a determinate progress bar
   detail?: string;
   since: number; // unix seconds
+}
+
+export type LogLevel = "info" | "ok" | "warn" | "error";
+
+export interface LogEntry {
+  time: number; // unix seconds
+  level: LogLevel;
+  message: string;
 }
 
 export interface Snapshot {
   peers: Peer[];
   extensions: ExtSync[];
+  log: LogEntry[];
 }
 
 // Server -> client frames.
@@ -71,4 +81,4 @@ export interface PeersMsg {
   beacons: string[]; // base64 sealed peer beacons read from storage.sync
 }
 
-export const EMPTY_SNAPSHOT: Snapshot = { peers: [], extensions: [] };
+export const EMPTY_SNAPSHOT: Snapshot = { peers: [], extensions: [], log: [] };

@@ -1,9 +1,4 @@
 @import "tailwindcss";
-
-html,
-body {
-  margin: 0;
-}
-body {
-  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
-}
+@import "../../assets/theme.css";
+@source "../../components";
+@source "../../lib";
