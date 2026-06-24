@@ -1,5 +1,5 @@
-import { defineConfig } from "wxt";
 import tailwindcss from "@tailwindcss/vite";
+import { defineConfig } from "wxt";
 
 // See https://wxt.dev/api/config.html
 export default defineConfig({
@@ -10,7 +10,8 @@ export default defineConfig({
   }),
   manifest: {
     name: "gusset",
-    description: "Sync your Firefox extension settings across your own devices.",
+    description:
+      "Sync your Firefox extension settings across your own devices.",
     // storage covers storage.local (settings) and storage.sync (beacon carrier).
     permissions: ["storage"],
     browser_specific_settings: {

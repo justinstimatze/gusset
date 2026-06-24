@@ -4,10 +4,20 @@
 // — caches the latest status + connection state, and answers the popup's queries.
 
 import { browser } from "wxt/browser";
-import { DaemonClient, type ConnState } from "@/lib/daemon";
 import { publishBeacon, readPeerBeacons } from "@/lib/carrier";
-import { loadSettings, saveSettings, isConfigured, type Settings } from "@/lib/settings";
+import { type ConnState, DaemonClient } from "@/lib/daemon";
 import { EMPTY_SNAPSHOT, type Snapshot } from "@/lib/protocol";
+import {
+  isConfigured,
+  loadSettings,
+  type Settings,
+  saveSettings,
+} from "@/lib/settings";
+
+// PopupMsg is the popup -> background message protocol.
+type PopupMsg =
+  | { type: "get-state" }
+  | { type: "save-settings"; settings: Settings };
 
 export default defineBackground(() => {
   let client: DaemonClient | null = null;
@@ -55,16 +65,23 @@ export default defineBackground(() => {
   browser.storage.sync.onChanged.addListener(() => void reportPeers());
 
   // Popup queries. get-state returns a token-free view; save-settings reconnects.
-  browser.runtime.onMessage.addListener((msg: any, _sender, sendResponse) => {
-    if (msg?.type === "get-state") {
+  browser.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+    if (!message || typeof message !== "object") return false;
+    const msg = message as PopupMsg;
+    if (msg.type === "get-state") {
       void loadSettings().then((s) => {
-        sendResponse({ connState, snapshot, configured: isConfigured(s), wsUrl: s.wsUrl });
+        sendResponse({
+          connState,
+          snapshot,
+          configured: isConfigured(s),
+          wsUrl: s.wsUrl,
+        });
       });
       return true; // keep the channel open for the async response
     }
-    if (msg?.type === "save-settings") {
-      void saveSettings(msg.settings as Settings).then(async () => {
-        await start(msg.settings as Settings);
+    if (msg.type === "save-settings") {
+      void saveSettings(msg.settings).then(async () => {
+        await start(msg.settings);
         sendResponse({ ok: true });
       });
       return true;

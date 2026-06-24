@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import { fakeBrowser } from "wxt/testing";
 import { installId, publishBeacon, readPeerBeacons } from "./carrier";
 
@@ -11,7 +11,9 @@ describe("installId", () => {
     const a = await installId();
     const b = await installId();
     expect(a).toBe(b);
-    expect(a).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+    expect(a).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
+    );
   });
 });
 
@@ -20,7 +22,10 @@ describe("publishBeacon / readPeerBeacons", () => {
     await publishBeacon("my-sealed-beacon", 1000);
     const id = await installId();
     const stored = await fakeBrowser.storage.sync.get(null);
-    expect(stored[`gusset:beacon:${id}`]).toEqual({ beacon: "my-sealed-beacon", t: 1000 });
+    expect(stored[`gusset:beacon:${id}`]).toEqual({
+      beacon: "my-sealed-beacon",
+      t: 1000,
+    });
   });
 
   it("returns peers' beacons but never this device's own", async () => {

@@ -7,7 +7,7 @@
 // Connection state is explicit so the UI can show an actionable status (notably
 // "daemon not running") rather than a silent spinner.
 
-import type { ServerMsg, Snapshot, AuthMsg, PeersMsg } from "./protocol";
+import type { AuthMsg, PeersMsg, ServerMsg, Snapshot } from "./protocol";
 
 export type ConnState =
   | "idle" // no settings configured yet

@@ -27,10 +27,10 @@ networks — by trading sealed beacons through a shared folder
 through NATs (ICE) and reconciles over the punched connection. Runs on Linux and
 macOS.
 
-The companion WebExtension — which carries beacons over Firefox Sync's
-`storage.sync` and hosts the status UI — is in progress under
-[`extension/`](extension/) (the daemon serves it over `gusset sync --ws`). Still
-to come: the full status-grid dashboard, and a relay for the symmetric-NAT pairs
+The companion WebExtension under [`extension/`](extension/) carries beacons over
+Firefox Sync's `storage.sync` and hosts the status UI — a toolbar popup plus a
+dashboard with the per-extension × per-device sync grid (the daemon serves it
+over `gusset sync --ws`). Still to come: a relay for the symmetric-NAT pairs
 hole-punching can't cross. See [docs/design.md](docs/design.md) for the design.
 
 ## Build

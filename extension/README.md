@@ -31,7 +31,11 @@ npm install
 npm run dev:firefox     # load into a dev Firefox with HMR
 npm run build:firefox   # production build -> .output/firefox-mv3
 npm run compile         # tsc typecheck
+npm test                # vitest
+npm run check           # biome lint + format check (check:fix to apply)
 ```
 
-Stack: [WXT](https://wxt.dev) + React + Tailwind. Manifest V3, Firefox event-page
-background (it owns the single daemon connection; the popup is too short-lived).
+Stack: [WXT](https://wxt.dev) + React + Tailwind, [Biome](https://biomejs.dev)
+for lint/format, [Vitest](https://vitest.dev) for tests. Manifest V3, Firefox
+event-page background (it owns the single daemon connection; the popup is too
+short-lived). Node version pinned in `.nvmrc`.

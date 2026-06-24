@@ -9,10 +9,11 @@
   and reports peers back, and renders the live status in a popup with a pairing
   form. The WebSocket client is a state machine with first-frame token auth and
   backoff reconnect — a rejected token surfaces "token rejected", a missing
-  daemon "daemon not running", never a silent spinner. Unit-tested (vitest) for
-  the connection state machine and the carrier's namespacing; an `extension` CI
-  job typechecks, tests, and builds it. First increment — the status-grid
-  dashboard is still to come.
+  daemon "daemon not running", never a silent spinner. The toolbar popup is the
+  glanceable launcher; a full dashboard page (options_ui) renders the
+  per-extension × per-device sync grid with reasons, as an accessible native
+  table. Unit-tested (vitest) for the connection state machine and the carrier's
+  namespacing; an `extension` CI job typechecks, tests, and builds it.
 - The localhost WebSocket is now the production beacon carrier as well as the
   status stream. The daemon cannot touch the `storage.sync` API — only the
   extension can — so the WS server implements `rendezvous.Signaling` by proxy:

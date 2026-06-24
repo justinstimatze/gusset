@@ -1,5 +1,5 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { DaemonClient, type ConnState } from "./daemon";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { type ConnState, DaemonClient } from "./daemon";
 import type { Snapshot } from "./protocol";
 
 // FakeWS is a controllable WebSocket stand-in. Tests drive the "server" side via
@@ -139,6 +139,9 @@ describe("DaemonClient", () => {
     ws.open();
     ws.sent.length = 0; // drop the auth frame
     client.sendPeers(["a", "b"]);
-    expect(JSON.parse(ws.sent[0])).toEqual({ type: "peers", beacons: ["a", "b"] });
+    expect(JSON.parse(ws.sent[0])).toEqual({
+      type: "peers",
+      beacons: ["a", "b"],
+    });
   });
 });

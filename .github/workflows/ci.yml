@@ -72,6 +72,8 @@ jobs:
           cache: npm
           cache-dependency-path: extension/package-lock.json
       - run: npm ci
+      - name: Lint & format (Biome)
+        run: npx biome check --diagnostic-level=error .
       - name: Typecheck
         run: npm run compile
       - name: Test
