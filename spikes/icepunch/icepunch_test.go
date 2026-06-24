@@ -30,11 +30,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pion/ice/v3"
+	"github.com/pion/ice/v4"
 	"github.com/pion/logging"
-	"github.com/pion/stun/v2"
-	"github.com/pion/transport/v3/vnet"
-	"github.com/pion/turn/v3"
+	"github.com/pion/stun/v3"
+	"github.com/pion/transport/v4/vnet"
+	"github.com/pion/turn/v4"
 )
 
 // Virtual-network addressing. Two LANs, each behind its own NAT router, joined
@@ -136,7 +136,7 @@ func buildVNet(t *testing.T, nat0, nat1 *vnet.NATType) *vnetTopo {
 
 	wan, err := vnet.NewRouter(&vnet.RouterConfig{CIDR: "0.0.0.0/0", LoggerFactory: lf})
 	must(t, err)
-	wanNet, err := vnet.NewNet(&vnet.NetConfig{StaticIP: wanSTUNIP})
+	wanNet, err := vnet.NewNet(&vnet.NetConfig{StaticIPs: []string{wanSTUNIP}})
 	must(t, err)
 	must(t, wan.AddNet(wanNet))
 

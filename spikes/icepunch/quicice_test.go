@@ -24,7 +24,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pion/ice/v3"
+	"github.com/pion/ice/v4"
 	"github.com/quic-go/quic-go"
 )
 
