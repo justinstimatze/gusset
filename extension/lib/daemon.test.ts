@@ -56,7 +56,11 @@ function newClient() {
   return { client, states, statuses, beacons };
 }
 
-const last = <T>(a: T[]): T => a[a.length - 1];
+const last = <T>(a: T[]): T => {
+  const v = a[a.length - 1];
+  if (v === undefined) throw new Error("expected a non-empty array");
+  return v;
+};
 
 beforeEach(() => {
   FakeWS.instances = [];
@@ -74,7 +78,7 @@ describe("DaemonClient", () => {
     const ws = last(FakeWS.instances);
     ws.open();
     expect(ws.sent).toHaveLength(1);
-    expect(JSON.parse(ws.sent[0])).toEqual({ token: "the-token" });
+    expect(JSON.parse(ws.sent[0] ?? "")).toEqual({ token: "the-token" });
   });
 
   it("delivers status and beacon messages and reports connected", () => {
@@ -139,7 +143,7 @@ describe("DaemonClient", () => {
     ws.open();
     ws.sent.length = 0; // drop the auth frame
     client.sendPeers(["a", "b"]);
-    expect(JSON.parse(ws.sent[0])).toEqual({
+    expect(JSON.parse(ws.sent[0] ?? "")).toEqual({
       type: "peers",
       beacons: ["a", "b"],
     });

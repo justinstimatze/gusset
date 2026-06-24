@@ -187,7 +187,7 @@ function Grid({ snapshot }: { snapshot: Snapshot }) {
                           ) : (
                             <span
                               className="text-zinc-300 dark:text-zinc-600"
-                              aria-label="not present"
+                              aria-hidden="true"
                             >
                               —
                             </span>

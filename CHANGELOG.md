@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- The extension's TypeScript runs under a strict regime: `tsconfig` adds
+  `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`, `verbatimModuleSyntax`,
+  `noUnusedLocals`/`noUnusedParameters`, `noImplicitOverride`/`noImplicitReturns`,
+  and `noFallthroughCasesInSwitch` on top of `strict`; Biome's `noExplicitAny`,
+  `noNonNullAssertion`, and unused-symbol rules are errors (test fakes may use
+  `any`). The codebase is clean under all of them — the React roots are
+  null-checked, buttons carry an explicit type, and array accesses are guarded.
 - Companion Firefox WebExtension under `extension/` (WXT + React + Tailwind,
   Manifest V3): the production `storage.sync` beacon courier and the status UI.
   It owns the single daemon connection in its background event page, bridges the

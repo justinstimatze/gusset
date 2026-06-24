@@ -17,6 +17,7 @@ function App() {
         <h1 className="text-base font-semibold tracking-tight">gusset</h1>
         {state?.configured && (
           <button
+            type="button"
             onClick={() => setEditing((e) => !e)}
             className="rounded px-2 py-1 text-xs text-zinc-500 hover:bg-zinc-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500 dark:text-zinc-400 dark:hover:bg-zinc-800"
           >
@@ -104,6 +105,7 @@ function Status({ state }: { state: BgState }) {
           )}
 
           <button
+            type="button"
             onClick={() => void browser.runtime.openOptionsPage()}
             className="w-full rounded border border-zinc-200 py-1.5 text-xs font-medium hover:bg-zinc-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500 dark:border-zinc-700 dark:hover:bg-zinc-800"
           >
