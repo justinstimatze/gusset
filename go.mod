@@ -2,6 +2,8 @@ module github.com/justinstimatze/gusset
 
 go 1.26.0
 
+toolchain go1.26.4
+
 require (
 	github.com/grandcat/zeroconf v1.0.0
 	github.com/pion/ice/v3 v3.0.16

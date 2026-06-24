@@ -7,6 +7,8 @@ linters:
   default: none
   enable:
     - errcheck
+    - errorlint
+    - gosec
     - govet
     - ineffassign
     - staticcheck
@@ -20,12 +22,20 @@ linters:
         - fmt.Fprintln
         - fmt.Fprintf
         - fmt.Fprint
+    gosec:
+      excludes:
+        # gusset's whole job is reading and writing Firefox's on-disk stores, so
+        # these fire on legitimate, locally-derived filesystem operations:
+        - G301 # dir perms: storage dirs are created at Firefox's own 0755 so the browser can read them back
+        - G306 # file perms: store files are written at 0644 to match Firefox's own
+        - G304 # file-by-variable: paths are locally derived (profile/config/snapshot); the one remote-influenced path (store.Apply) is validated by validateMetaPaths
   exclusions:
     rules:
       - path: _test\.go
         linters:
           - errcheck
           - staticcheck
+          - gosec # test fixtures, deterministic seeds, and subprocess spawns are not a security surface
       - path: scripts/
         linters:
           - errcheck
