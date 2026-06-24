@@ -80,7 +80,8 @@ func initCmd(args []string) error {
 		fmt.Printf("  gusset init --salt %s\n", b64)
 	}
 	d, _ := config.Dir()
-	fmt.Printf("next: put your 8-word passphrase in %s/passphrase (chmod 600),\n", d)
+	fmt.Printf("next: put your passphrase in %s/passphrase (chmod 600) —\n", d)
+	fmt.Println("  generate one with `gusset gen-passphrase` and use the SAME words on every device.")
 	fmt.Println("  then `gusset allow <extension-id>` to opt extensions in (see `gusset doctor`).")
 	return nil
 }

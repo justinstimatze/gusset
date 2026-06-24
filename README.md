@@ -17,15 +17,18 @@ for the load-bearing internals, verified against a live profile.
 
 ## Status
 
-Working CLI; no companion extension yet. The full local pipeline is in place —
-profile resolver, store snapshot+apply (UUID re-homing), policy allowlist,
-passphrase crypto, content-defined chunking, and the device-to-device transport
-over passphrase-derived mutual TLS. `gusset sync` syncs allowlisted extensions
-between two machines, finding each other by mDNS on the same network, or — across
-networks — by trading sealed beacons through a shared folder
-(`--rendezvous-dir`). When no direct route works and `--stun` is set, it punches
-through NATs (ICE) and reconciles over the punched connection. Runs on Linux and
-macOS.
+Early but working. The full local pipeline is in place — profile resolver, store
+snapshot+apply (UUID re-homing), policy allowlist, passphrase crypto,
+content-defined chunking, and the device-to-device transport over
+passphrase-derived mutual TLS. `gusset sync` syncs allowlisted extensions between
+two machines, finding each other by mDNS on the same network, or — across
+networks — by trading sealed beacons through a shared folder (`--rendezvous-dir`).
+When no direct route works and `--stun` is set, it punches through NATs (ICE) and
+reconciles over the punched connection. Runs on Linux and macOS.
+
+**Trying it?** [TESTING.md](TESTING.md) is a staged quickstart (most-proven path
+first). The CLI sync is the well-tested core; the companion extension end-to-end
+is still experimental.
 
 The companion WebExtension under [`extension/`](extension/) carries beacons over
 Firefox Sync's `storage.sync` and hosts the status UI — a toolbar popup plus a
@@ -44,12 +47,13 @@ make lint       # golangci-lint
 ## Usage
 
 ```sh
-gusset version   # build version
-gusset doctor    # resolve the active Firefox profile, list installed extensions
-gusset init      # create the config and a per-user salt (prints a command to pair other devices)
-gusset allow ID  # opt an extension into syncing (the allowlist is empty by default)
-gusset status    # show peers and per-extension sync state, with reasons
-gusset sync      # sync allowlisted extensions with a peer (see `gusset sync --help`)
+gusset version        # build version
+gusset gen-passphrase # print a strong passphrase to share across your devices
+gusset doctor         # resolve the active Firefox profile, list installed extensions
+gusset init           # create the config and a per-user salt (prints a command to pair other devices)
+gusset allow ID       # opt an extension into syncing (the allowlist is empty by default)
+gusset status         # show peers and per-extension sync state, with reasons
+gusset sync           # sync allowlisted extensions with a peer (see `gusset sync --help`)
 ```
 
 `doctor` is read-only — it touches nothing, and is the quickest way to confirm

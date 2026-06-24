@@ -75,6 +75,8 @@ func main() {
 		err = wsTokenCmd(args[1:])
 	case "sync":
 		err = syncCmd(args[1:])
+	case "gen-passphrase":
+		err = genPassphraseCmd(args[1:])
 	case "init":
 		err = initCmd(args[1:])
 	case "allow":
@@ -97,6 +99,7 @@ func usage() {
 
 usage:
   gusset version    print the build version
+  gusset gen-passphrase  print a fresh strong passphrase to share across your devices
   gusset doctor     resolve the active Firefox profile and list installed extensions
   gusset init       create the config and a per-user salt (--salt to pair a device; --no-salt to skip)
   gusset allow      add extension IDs to the persisted sync allowlist
