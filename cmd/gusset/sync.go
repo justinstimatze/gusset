@@ -53,6 +53,7 @@ func syncCmd(args []string) error {
 	overrideCSV := fs.String("override", "", "comma-separated sensitive extension IDs to force-enable")
 	restartFF := fs.Bool("restart-firefox", false, "close Firefox to apply, then relaunch it (destructive: closes your browser)")
 	ffBin := fs.String("firefox-bin", "", "Firefox binary to relaunch with --restart-firefox (default: platform Firefox)")
+	profileDir := fs.String("profile", "", "Firefox profile dir to sync (default: the active profile; or GUSSET_PROFILE)")
 	wsAddr := fs.String("ws", "", "serve live status to the companion extension over a localhost WebSocket at this loopback host:port (e.g. 127.0.0.1:8765)")
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -79,7 +80,7 @@ func syncCmd(args []string) error {
 		return err
 	}
 
-	profDir, installed, err := localProfile()
+	profDir, installed, err := localProfile(profileOverride(*profileDir))
 	if err != nil {
 		return err
 	}
@@ -554,22 +555,36 @@ func splitCSV(s string) []string {
 	return out
 }
 
-// localProfile resolves the active Firefox profile dir and its installed
-// extension UUIDs.
-func localProfile() (dir string, installed map[string]string, err error) {
-	root, err := profile.FirefoxRoot()
-	if err != nil {
-		return "", nil, err
-	}
-	dir, err = profile.DefaultProfileDir(root)
-	if err != nil {
-		return "", nil, err
+// localProfile resolves a Firefox profile dir and its installed extension UUIDs.
+// An explicit override (the --profile flag or GUSSET_PROFILE) is used as-is —
+// useful for testing two profiles on one machine; otherwise the active default
+// profile is resolved.
+func localProfile(override string) (dir string, installed map[string]string, err error) {
+	dir = override
+	if dir == "" {
+		root, rerr := profile.FirefoxRoot()
+		if rerr != nil {
+			return "", nil, rerr
+		}
+		dir, err = profile.DefaultProfileDir(root)
+		if err != nil {
+			return "", nil, err
+		}
 	}
 	installed, err = profile.ExtensionUUIDs(dir)
 	if err != nil {
-		return "", nil, err
+		return "", nil, fmt.Errorf("reading profile %s: %w", dir, err)
 	}
 	return dir, installed, nil
+}
+
+// profileOverride returns the explicit profile dir to use: the flag value, else
+// GUSSET_PROFILE, else "" (auto-resolve the active profile).
+func profileOverride(flagVal string) string {
+	if flagVal != "" {
+		return flagVal
+	}
+	return os.Getenv("GUSSET_PROFILE")
 }
 
 // readPassphrase loads the root secret, in order of preference: the config's

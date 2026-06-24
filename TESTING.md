@@ -6,9 +6,12 @@ Sync leaves open. This is **early software**; the tiers below go from "well
 tested" to "experimental," so start at the top.
 
 > **Back up first.** gusset's "apply" step rewrites an extension's on-disk store.
-> It stages changes and keeps a backup until the swap succeeds, but this is a
-> test build pointed at your real data — copy your Firefox profile folder
-> somewhere safe before you start. To find it: `gusset doctor`.
+> It stages changes, keeps a backup until the swap succeeds, and **refuses to
+> write while Firefox is running** — but this is a test build pointed at your
+> real data, so copy your Firefox profile folder somewhere safe before you start.
+> Find it with `gusset doctor`. On **macOS** the running-Firefox detection is
+> less certain than on Linux, so always close Firefox yourself before a sync that
+> will apply.
 
 ## What you need
 
@@ -62,6 +65,44 @@ between them (Dropbox, Syncthing, etc.):
 ```
 
 Only sealed, opaque blobs ever touch the folder.
+
+## Testing on one machine, with two Firefox profiles
+
+No second machine? Simulate two "devices" with two Firefox profiles and two
+gusset configs on the same box.
+
+1. Make a second profile and put a different uBO config in it:
+   ```sh
+   firefox -P                      # Profile Manager → create e.g. "gusset-test"
+   ```
+   Open it once, install uBlock Origin, tweak a setting, then **close Firefox
+   completely** (both profiles — apply needs Firefox not running). Find each
+   profile's directory with `GUSSET_PROFILE= gusset doctor` or in `about:profiles`.
+
+2. Two configs, same passphrase, distinct device ids (generated automatically):
+   ```sh
+   PASS="$(./gusset gen-passphrase)"        # the same secret for both
+
+   for d in A B; do
+     GUSSET_CONFIG_DIR=/tmp/gusset-$d ./gusset init --no-salt --device-name "Device$d"
+     printf '%s' "$PASS" > /tmp/gusset-$d/passphrase && chmod 600 /tmp/gusset-$d/passphrase
+     GUSSET_CONFIG_DIR=/tmp/gusset-$d ./gusset allow uBlock0@raymondhill.net
+   done
+   ```
+
+3. With **Firefox closed**, run both — A serves on a fixed port, B dials it
+   directly (no mDNS needed on one box):
+   ```sh
+   # terminal 1 — Device A (its profile is the newer one you want to propagate)
+   GUSSET_CONFIG_DIR=/tmp/gusset-A GUSSET_PROFILE=/path/to/profileA \
+     ./gusset sync --listen 127.0.0.1:9001 --for 60s
+
+   # terminal 2 — Device B pulls from A
+   GUSSET_CONFIG_DIR=/tmp/gusset-B GUSSET_PROFILE=/path/to/profileB \
+     ./gusset sync --peer 127.0.0.1:9001 --for 60s
+   ```
+   Reconcile is last-writer-wins by timestamp, so the profile you edited most
+   recently wins. Open profile B → uBO should now show Device A's setting.
 
 ## Tier 3 — the companion extension (status UI; experimental)
 

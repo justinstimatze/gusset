@@ -115,6 +115,7 @@ usage:
     --watch               stay reachable indefinitely (until Ctrl-C)
     --peer host:port      dial a peer directly, skipping discovery
     --listen host:port    bind a specific listen address (default :0, an OS-picked port)
+    --profile dir         Firefox profile to sync (default: active; or GUSSET_PROFILE)
     --restart-firefox     close Firefox to apply, then relaunch it (closes your browser)
     --rendezvous-dir dir  reach peers off the LAN by trading sealed beacons through
                           a shared folder (Tier 1; e.g. a synced/Dropbox dir)
@@ -131,15 +132,17 @@ usage:
 // doctor resolves the local Firefox profile and reports what gusset sees. It is
 // read-only and the first dogfoodable exercise of internal/profile.
 func doctor() error {
-	root, err := profile.FirefoxRoot()
-	if err != nil {
-		return err
-	}
-	fmt.Printf("firefox root:    %s\n", root)
-
-	dir, err := profile.DefaultProfileDir(root)
-	if err != nil {
-		return err
+	dir := os.Getenv("GUSSET_PROFILE")
+	if dir == "" {
+		root, err := profile.FirefoxRoot()
+		if err != nil {
+			return err
+		}
+		fmt.Printf("firefox root:    %s\n", root)
+		dir, err = profile.DefaultProfileDir(root)
+		if err != nil {
+			return err
+		}
 	}
 	fmt.Printf("active profile:  %s\n", dir)
 
