@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- `internal/statusws` + `gusset sync --ws host:port`: the daemon can now stream
+  live status to the companion extension over a localhost WebSocket. It is
+  loopback-only (a non-loopback bind is refused) and gated by a token derived
+  from the passphrase — localhost is not a trust boundary, so an unauthenticated
+  socket is closed before it sees any status. The status model gained change
+  subscriptions, so the socket pushes a fresh Snapshot the moment anything
+  changes (with an app-level heartbeat to drop dead clients), and `gusset
+  ws-token` prints the pairing token to paste into the extension once. This is
+  the daemon-side substrate the companion extension connects to.
 - Security: TLS peer pinning now also covers resumed sessions. The mutual-TLS
   configs gained a `VerifyConnection` pin (invoked on resumed TLS 1.3 handshakes,
   which skip `VerifyPeerCertificate`) and the server disables session tickets, so

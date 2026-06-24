@@ -50,6 +50,7 @@ func syncCmd(args []string) error {
 	overrideCSV := fs.String("override", "", "comma-separated sensitive extension IDs to force-enable")
 	restartFF := fs.Bool("restart-firefox", false, "close Firefox to apply, then relaunch it (destructive: closes your browser)")
 	ffBin := fs.String("firefox-bin", "", "Firefox binary to relaunch with --restart-firefox (default: platform Firefox)")
+	wsAddr := fs.String("ws", "", "serve live status to the companion extension over a localhost WebSocket at this loopback host:port (e.g. 127.0.0.1:8765)")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -164,6 +165,11 @@ func syncCmd(args []string) error {
 	}
 
 	ctx := lifetimeContext(*watch, *forDur)
+	if *wsAddr != "" {
+		if err := startStatusWS(ctx, *wsAddr, model, k); err != nil {
+			return err
+		}
+	}
 	target := store.NewFirefox(profDir)
 	pullDeps := pullContext{id: id, target: target, k: k, localCat: localCat, allow: allow, workDir: workDir, model: model, offer: offer}
 

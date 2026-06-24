@@ -201,10 +201,13 @@ internal/rendezvous/ sealed beacons over a Signaling carrier (shared folder toda
 internal/icewire/    ICE NAT hole-punch + QUIC reliable stream, reusing the pinned identity
 internal/converge/   the reconcile loop (build offer, pull, apply)
 internal/status/     single status source; the "never sync silently" model
+internal/statusws/   token-gated loopback WebSocket that streams the status Snapshot to the extension
 ```
 
 The daemon↔extension channel is a **localhost WebSocket**, not native messaging,
-so there is no native-messaging host to register.
+so there is no native-messaging host to register. It is loopback-only and gated
+by a token derived from the passphrase (`gusset ws-token`) — localhost is not a
+trust boundary, so an unauthenticated socket is closed before it sees any status.
 
 ## Versioning and build
 

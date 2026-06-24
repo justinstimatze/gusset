@@ -71,6 +71,8 @@ func main() {
 		err = doctor()
 	case "status":
 		err = statusCmd()
+	case "ws-token":
+		err = wsTokenCmd(args[1:])
 	case "sync":
 		err = syncCmd(args[1:])
 	case "init":
@@ -100,6 +102,7 @@ usage:
   gusset allow      add extension IDs to the persisted sync allowlist
   gusset disallow   remove extension IDs from the allowlist
   gusset status     report sync status (peers and per-extension state, with reasons)
+  gusset ws-token   print the localhost-WebSocket token to pair the companion extension
   gusset sync       sync allowlisted extensions with a LAN peer (on-demand; see --help)
 
   gusset sync flags:
@@ -115,6 +118,9 @@ usage:
     --device-id id        stable id for this device in beacons (default: hostname)
     --stun host:port      STUN server; adds the public-IP beacon candidate and
                           enables the ICE NAT-hole-punch fallback
+    --ws host:port        serve live status to the companion extension over a
+                          loopback WebSocket (e.g. 127.0.0.1:8765); pair with
+                          'gusset ws-token'
   passphrase comes from GUSSET_PASSPHRASE_FILE (a path) or GUSSET_PASSPHRASE.
 `)
 }

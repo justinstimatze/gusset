@@ -93,16 +93,50 @@ type Snapshot struct {
 }
 
 // Model is the concurrency-safe live status. The daemon mutates it from several
-// goroutines (accept loop, sync workers); readers take Snapshots.
+// goroutines (accept loop, sync workers); readers take Snapshots, and a live
+// surface (the localhost WS) can Subscribe to be woken on every change.
 type Model struct {
 	mu    sync.Mutex
 	peers map[string]Peer
 	exts  map[string]ExtSync
+	subs  map[chan struct{}]struct{}
 }
 
 // New returns an empty model.
 func New() *Model {
-	return &Model{peers: map[string]Peer{}, exts: map[string]ExtSync{}}
+	return &Model{
+		peers: map[string]Peer{},
+		exts:  map[string]ExtSync{},
+		subs:  map[chan struct{}]struct{}{},
+	}
+}
+
+// Subscribe registers for change notifications. It returns a channel that
+// receives a (coalesced) signal whenever the model changes — at most one pending
+// signal per subscriber, so a slow reader never blocks a writer and never misses
+// that *a* change happened — and an unsubscribe function the caller must invoke
+// when done. The caller responds to a signal by taking a fresh Snapshot.
+func (m *Model) Subscribe() (<-chan struct{}, func()) {
+	ch := make(chan struct{}, 1)
+	m.mu.Lock()
+	m.subs[ch] = struct{}{}
+	m.mu.Unlock()
+	return ch, func() {
+		m.mu.Lock()
+		delete(m.subs, ch)
+		m.mu.Unlock()
+	}
+}
+
+// notify wakes every subscriber. It must be called with m.mu held. The send is
+// non-blocking: a subscriber that already has a pending signal stays at one.
+func (m *Model) notify() {
+	for ch := range m.subs {
+		select {
+		case ch <- struct{}{}:
+		default:
+		}
+	}
 }
 
 // extKey namespaces a per-extension-per-peer entry.
@@ -113,6 +147,7 @@ func (m *Model) SetPeer(p Peer) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.peers[p.DeviceID] = p
+	m.notify()
 }
 
 // RemovePeer drops a peer and all its per-extension entries (e.g. on unpair).
@@ -125,6 +160,7 @@ func (m *Model) RemovePeer(deviceID string) {
 			delete(m.exts, k)
 		}
 	}
+	m.notify()
 }
 
 // SetExtSync records or replaces one extension's sync state with one peer.
@@ -132,6 +168,7 @@ func (m *Model) SetExtSync(e ExtSync) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.exts[extKey(e.Extension, e.DeviceID)] = e
+	m.notify()
 }
 
 // Snapshot returns a sorted, deep copy safe to render or marshal without the
