@@ -55,7 +55,14 @@ export interface LogEntry {
   message: string;
 }
 
+// Self is the local device — so the UI can label "this device" / "you".
+export interface Self {
+  device_id: string;
+  name?: string;
+}
+
 export interface Snapshot {
+  self: Self;
   peers: Peer[];
   extensions: ExtSync[];
   log: LogEntry[];
@@ -81,4 +88,9 @@ export interface PeersMsg {
   beacons: string[]; // base64 sealed peer beacons read from storage.sync
 }
 
-export const EMPTY_SNAPSHOT: Snapshot = { peers: [], extensions: [], log: [] };
+export const EMPTY_SNAPSHOT: Snapshot = {
+  self: { device_id: "" },
+  peers: [],
+  extensions: [],
+  log: [],
+};

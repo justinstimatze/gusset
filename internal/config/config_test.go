@@ -4,10 +4,47 @@ import (
 	"bytes"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/justinstimatze/gusset/internal/crypto"
 )
+
+func TestEnsureIdentity(t *testing.T) {
+	c := &Config{}
+	changed, err := c.EnsureIdentity("My-Host")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !changed {
+		t.Fatal("first EnsureIdentity should report a change")
+	}
+	if c.DeviceName != "My-Host" {
+		t.Fatalf("DeviceName = %q, want the hostname", c.DeviceName)
+	}
+	if !strings.HasPrefix(c.DeviceID, "My-Host-") || len(c.DeviceID) != len("My-Host-")+6 {
+		t.Fatalf("DeviceID = %q, want hostname + '-' + 6 hex", c.DeviceID)
+	}
+
+	// Idempotent: a second call changes nothing and keeps the same identity.
+	id, name := c.DeviceID, c.DeviceName
+	if changed, _ := c.EnsureIdentity("ignored"); changed {
+		t.Fatal("second EnsureIdentity should report no change")
+	}
+	if c.DeviceID != id || c.DeviceName != name {
+		t.Fatal("EnsureIdentity must not alter an existing identity")
+	}
+
+	// The whole point: two devices that share a hostname get DISTINCT ids, so
+	// they don't collide in mDNS self-detection, the status map, or ICE tie-break.
+	other := &Config{}
+	if _, err := other.EnsureIdentity("My-Host"); err != nil {
+		t.Fatal(err)
+	}
+	if other.DeviceID == c.DeviceID {
+		t.Fatal("same-hostname devices must receive distinct device ids")
+	}
+}
 
 func TestLoad_MissingIsEmptyNotError(t *testing.T) {
 	t.Setenv("GUSSET_CONFIG_DIR", t.TempDir())

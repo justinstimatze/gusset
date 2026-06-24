@@ -5,6 +5,7 @@ import type { Snapshot } from "@/lib/protocol";
 const now = Math.floor(Date.now() / 1000);
 
 const snapshot: Snapshot = {
+  self: { device_id: "thinkpad-9c4d", name: "This Laptop" },
   peers: [
     { device_id: "laptop-7f3a", name: "Work Laptop", state: "connected", link: "lan", since: 0 },
     { device_id: "phone-22b1", name: "Phone", state: "hole-punching", since: 0 },

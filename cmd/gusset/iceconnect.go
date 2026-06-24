@@ -43,28 +43,28 @@ func gatherICESession(stunServer string) (*icewire.Session, *rendezvous.ICEEndpo
 // single-use, so this is spent on the first peer that needs it in a run.
 func icePull(p rzPeer, deps pullContext) []converge.Outcome {
 	now := time.Now().Unix()
-	deps.model.SetPeer(status.Peer{DeviceID: p.instance, State: status.HolePunching, Since: now})
+	deps.model.SetPeer(status.Peer{DeviceID: p.deviceID, Name: p.name, State: status.HolePunching, Since: now})
 
 	ctx, cancel := context.WithTimeout(context.Background(), iceConnectTimeout)
 	defer cancel()
 
 	// Exactly one side controls ICE (and is the QUIC client); the greater device
 	// id wins, so both peers independently agree on opposite roles. Identical ids
-	// would make both controlled — distinct ids (hostname or --device-id) avoid it.
+	// would make both controlled — the persisted unique device ids avoid that.
 	controlling := deps.selfID > p.deviceID
 
 	conn, err := deps.iceSession.Connect(ctx, deps.id, toICEEndpoint(*p.ice), controlling)
 	if err != nil {
 		deps.model.SetPeer(status.Peer{
-			DeviceID: p.instance, State: status.Unreachable,
+			DeviceID: p.deviceID, Name: p.name, State: status.Unreachable,
 			Reason: status.NATFailed, Detail: err.Error(), Since: now,
 		})
 		return nil
 	}
 	defer func() { _ = conn.Close() }()
-	deps.model.SetPeer(status.Peer{DeviceID: p.instance, State: status.Connected, Link: status.LinkDirectNAT, Since: now})
+	deps.model.SetPeer(status.Peer{DeviceID: p.deviceID, Name: p.name, State: status.Connected, Link: status.LinkDirectNAT, Since: now})
 
-	return iceReconcile(ctx, conn, p.instance, deps)
+	return iceReconcile(ctx, conn, p.deviceID, deps)
 }
 
 // iceReconcile runs a full bidirectional reconcile over one punched QUIC

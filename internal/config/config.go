@@ -7,6 +7,8 @@
 package config
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -35,6 +37,66 @@ type Config struct {
 	// PassphraseFile is the path to a 0600 file holding the passphrase. Empty
 	// means fall back to the default location or the environment.
 	PassphraseFile string `json:"passphrase_file,omitempty"`
+	// DeviceID is this device's stable, unique id within a pairing — the hostname
+	// plus a short random suffix, generated once and persisted. It is the map key
+	// and tie-break for peers, so it MUST be unique: two machines that share a
+	// hostname would otherwise collide in mDNS self-detection, the status map, and
+	// the ICE controlling tie-break, and fail to sync with each other.
+	DeviceID string `json:"device_id,omitempty"`
+	// DeviceName is the friendly label shown in the UI, defaulting to the
+	// hostname. Renaming it does not change DeviceID.
+	DeviceName string `json:"device_name,omitempty"`
+}
+
+// EnsureIdentity fills a stable unique DeviceID and a default DeviceName (from
+// hostname) when they are unset, returning whether anything changed so the
+// caller can persist. The random suffix guarantees uniqueness even when two
+// devices share a hostname.
+func (c *Config) EnsureIdentity(hostname string) (bool, error) {
+	if hostname == "" {
+		hostname = "device"
+	}
+	changed := false
+	if c.DeviceID == "" {
+		suffix, err := randomSuffix()
+		if err != nil {
+			return false, err
+		}
+		c.DeviceID = sanitizeLabel(hostname) + "-" + suffix
+		changed = true
+	}
+	if c.DeviceName == "" {
+		c.DeviceName = hostname
+		changed = true
+	}
+	return changed, nil
+}
+
+// randomSuffix returns 3 random bytes as 6 hex chars.
+func randomSuffix() (string, error) {
+	var b [3]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(b[:]), nil
+}
+
+// sanitizeLabel keeps only characters safe as an mDNS instance / id prefix.
+func sanitizeLabel(s string) string {
+	out := make([]rune, 0, len(s))
+	for _, r := range s {
+		switch {
+		case r == '-' || r == '_',
+			r >= 'a' && r <= 'z',
+			r >= 'A' && r <= 'Z',
+			r >= '0' && r <= '9':
+			out = append(out, r)
+		}
+	}
+	if len(out) == 0 {
+		return "device"
+	}
+	return string(out)
 }
 
 // Dir returns the config directory: GUSSET_CONFIG_DIR if set, else

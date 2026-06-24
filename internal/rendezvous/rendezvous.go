@@ -56,11 +56,12 @@ var ErrSchema = errors.New("rendezvous: unsupported beacon schema version")
 // (no bulk on storage.sync).
 type Beacon struct {
 	SchemaVersion int          `json:"v"`
-	DeviceID      string       `json:"device_id"`     // stable per-device id; distinguishes your own machines (the shared passphrase identity cannot)
-	Instance      string       `json:"instance"`      // human label (hostname), for status display
-	LANEndpoints  []string     `json:"lan,omitempty"` // host:port candidates on the local network
-	ICE           *ICEEndpoint `json:"ice,omitempty"` // ICE creds + candidates for NAT-hole-punch fallback (internal/icewire)
-	IssuedAt      int64        `json:"issued_at"`     // caller-supplied unix seconds; this package reads no clock
+	DeviceID      string       `json:"device_id"`      // stable unique per-device id; the key and tie-break (the shared passphrase identity cannot distinguish your machines)
+	Instance      string       `json:"instance"`       // hostname, kept for debugging
+	Name          string       `json:"name,omitempty"` // friendly display label (sealed, so only paired devices see it)
+	LANEndpoints  []string     `json:"lan,omitempty"`  // host:port candidates on the local network
+	ICE           *ICEEndpoint `json:"ice,omitempty"`  // ICE creds + candidates for NAT-hole-punch fallback (internal/icewire)
+	IssuedAt      int64        `json:"issued_at"`      // caller-supplied unix seconds; this package reads no clock
 }
 
 // ICEEndpoint carries what a peer needs to hole-punch to this device: the ICE

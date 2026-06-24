@@ -36,6 +36,7 @@ type rendezvousSource struct {
 type rzPeer struct {
 	instance string
 	deviceID string
+	name     string
 	targets  []dialTarget
 	ice      *rendezvous.ICEEndpoint
 }
@@ -71,7 +72,7 @@ func (s rendezvousSource) peers(ctx context.Context, now int64) ([]rzPeer, error
 		if len(targets) == 0 && b.ICE == nil {
 			continue // nothing dialable and no hole-punch endpoint either
 		}
-		out = append(out, rzPeer{instance: b.Instance, deviceID: b.DeviceID, targets: targets, ice: b.ICE})
+		out = append(out, rzPeer{instance: b.Instance, deviceID: b.DeviceID, name: b.Name, targets: targets, ice: b.ICE})
 	}
 	return out, nil
 }
@@ -94,10 +95,11 @@ func beaconTargets(b rendezvous.Beacon) []dialTarget {
 // same routed network or VPN where mDNS multicast does not cross. Cross-NAT
 // reachability rides the ICE endpoint gathered separately (gatherICESession)
 // and advertised alongside this beacon, not a server-reflexive guess.
-func gatherBeacon(deviceID, instance string, listenPort int, now int64) rendezvous.Beacon {
+func gatherBeacon(deviceID, instance, name string, listenPort int, now int64) rendezvous.Beacon {
 	return rendezvous.Beacon{
 		DeviceID:     deviceID,
 		Instance:     instance,
+		Name:         name,
 		LANEndpoints: localLANEndpoints(listenPort),
 		IssuedAt:     now,
 	}

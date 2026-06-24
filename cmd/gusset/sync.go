@@ -44,7 +44,8 @@ func syncCmd(args []string) error {
 	watch := fs.Bool("watch", false, "stay reachable indefinitely (until Ctrl-C)")
 	peerAddr := fs.String("peer", "", "dial this host:port directly, skipping mDNS discovery")
 	rzDir := fs.String("rendezvous-dir", "", "exchange sealed beacons through this shared folder to reach peers off the LAN (Tier 1)")
-	deviceID := fs.String("device-id", "", "stable id for this device in rendezvous beacons (default: hostname)")
+	deviceID := fs.String("device-id", "", "override this device's stable unique id (default: persisted, generated from hostname)")
+	deviceName := fs.String("device-name", "", "friendly name shown in the UI (default: hostname; persisted by `gusset init`)")
 	stunServer := fs.String("stun", "", "STUN server host:port; enables the public-IP beacon candidate and the ICE hole-punch fallback (e.g. stun.l.google.com:19302)")
 	listenAddr := fs.String("listen", "0.0.0.0:0", "address to listen on (host:port; :0 picks a free port)")
 	extCSV := fs.String("extensions", "", "comma-separated extension IDs to sync (the allowlist)")
@@ -154,11 +155,33 @@ func syncCmd(args []string) error {
 	if host == "" {
 		host = "gusset-peer"
 	}
+	// Resolve this device's stable unique id and friendly name (generated and
+	// persisted on first use), with optional flag overrides. The unique id is
+	// what keeps same-hostname devices from colliding.
+	if changed, ierr := cfg.EnsureIdentity(host); ierr != nil {
+		return ierr
+	} else if changed {
+		if serr := cfg.Save(); serr != nil {
+			fmt.Fprintf(os.Stderr, "couldn't persist device identity: %v\n", serr)
+		}
+	}
+	devID := cfg.DeviceID
+	if *deviceID != "" {
+		devID = *deviceID
+	}
+	devName := cfg.DeviceName
+	if *deviceName != "" {
+		devName = *deviceName
+	}
+	model.SetSelf(devID, devName)
+
 	tcpAddr, ok := srv.Addr().(*net.TCPAddr)
 	if !ok {
 		return fmt.Errorf("unexpected listener address type %T", srv.Addr())
 	}
-	stopAdvert, err := discovery.Advertise(host, tcpAddr.Port)
+	// mDNS advertises the unique device id (never the friendly name — the LAN
+	// broadcast stays minimal); the id is what distinguishes same-hostname peers.
+	stopAdvert, err := discovery.Advertise(devID, tcpAddr.Port)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "mDNS advertise unavailable (%v); peers must use --peer\n", err)
 	} else {
@@ -182,7 +205,7 @@ func syncCmd(args []string) error {
 		if *rzDir != "" {
 			fmt.Fprintln(os.Stderr, "note: --peer is set, so --rendezvous-dir is ignored (dialing the peer directly).")
 		}
-		outcomes, _ = pullFrom([]dialTarget{{addr: *peerAddr, link: status.LinkLAN}}, *peerAddr, pullDeps)
+		outcomes, _ = pullFrom([]dialTarget{{addr: *peerAddr, link: status.LinkLAN}}, *peerAddr, "", pullDeps)
 		<-ctx.Done() // linger so the peer can pull from us within the window
 	default:
 		// The cross-network beacon carrier is a shared folder (--rendezvous-dir)
@@ -198,13 +221,13 @@ func syncCmd(args []string) error {
 			carrier = wsServer
 			carrierLabel = "the companion extension (storage.sync)"
 		}
-		rzSrc, beacon, devID, sess := setupRendezvous(ctx, carrier, carrierLabel, *deviceID, *stunServer, host, tcpAddr.Port, k)
+		rzSrc, beacon, sess := setupRendezvous(ctx, carrier, carrierLabel, devID, devName, *stunServer, host, tcpAddr.Port, k)
 		if sess != nil {
 			defer func() { _ = sess.Close() }() // releases the ICE agent if it was never consumed
 		}
 		pullDeps.selfID = devID
 		pullDeps.iceSession = sess
-		outcomes = runDiscoveryLoop(ctx, host, pullDeps, rzSrc, beacon)
+		outcomes = runDiscoveryLoop(ctx, devID, pullDeps, rzSrc, beacon)
 	}
 
 	fmt.Println()
@@ -281,11 +304,11 @@ type dialTarget struct {
 // the two peer sources merge into one set, deduplicated so a peer reachable both
 // ways is pulled once. The server keeps running throughout, so peers can pull
 // from us concurrently.
-func runDiscoveryLoop(ctx context.Context, host string, deps pullContext, rz *rendezvousSource, beacon rendezvous.Beacon) []converge.Outcome {
+func runDiscoveryLoop(ctx context.Context, selfID string, deps pullContext, rz *rendezvousSource, beacon rendezvous.Beacon) []converge.Outcome {
 	var all []converge.Outcome
 	handled := map[string]bool{}
 	for ctx.Err() == nil {
-		peers, err := discovery.Browse(ctx, host, browseGrace)
+		peers, err := discovery.Browse(ctx, selfID, browseGrace)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "discovery: %v\n", err)
 		}
@@ -294,7 +317,9 @@ func runDiscoveryLoop(ctx context.Context, host string, deps pullContext, rz *re
 				continue
 			}
 			handled[p.Addr] = true
-			out, _ := pullFrom([]dialTarget{{addr: p.Addr, link: status.LinkLAN}}, p.Instance, deps)
+			// On the LAN only the unique id is known (no friendly name is
+			// broadcast), so it is both key and label.
+			out, _ := pullFrom([]dialTarget{{addr: p.Addr, link: status.LinkLAN}}, p.Instance, "", deps)
 			all = append(all, out...)
 		}
 		if rz != nil {
@@ -323,7 +348,7 @@ func rendezvousPass(ctx context.Context, rz *rendezvousSource, beacon rendezvous
 			continue
 		}
 		handled[key] = true
-		outcomes, dialed := pullFrom(p.targets, p.instance, deps)
+		outcomes, dialed := pullFrom(p.targets, p.deviceID, p.name, deps)
 		// Every direct target failed but the peer published a hole-punch
 		// endpoint and we have an ICE agent to spend — try to punch through.
 		if !dialed && p.ice != nil && deps.iceSession != nil {
@@ -357,34 +382,41 @@ func dialFirst(targets []dialTarget, id *transport.Identity) (*transport.Client,
 // and peer), and returns the outcomes for the apply-action banner. The bool
 // reports whether a connection was established: false means every direct target
 // failed, so the caller may fall back to a hole-punch.
-func pullFrom(targets []dialTarget, name string, deps pullContext) ([]converge.Outcome, bool) {
+// pullFrom dials a peer identified by peerID (the unique device id used as the
+// status key) with peerName as its friendly display label (may be empty, e.g.
+// for LAN peers, in which case the id is shown).
+func pullFrom(targets []dialTarget, peerID, peerName string, deps pullContext) ([]converge.Outcome, bool) {
 	now := time.Now().Unix()
+	label := peerName
+	if label == "" {
+		label = peerID
+	}
 	client, link, err := dialFirst(targets, deps.id)
 	if err != nil {
 		deps.model.SetPeer(status.Peer{
-			DeviceID: name, State: status.Unreachable,
+			DeviceID: peerID, Name: peerName, State: status.Unreachable,
 			Reason: status.PeerOffline, Detail: err.Error(), Since: now,
 		})
-		deps.model.Log(now, status.LogWarn, "couldn't reach "+name)
+		deps.model.Log(now, status.LogWarn, "couldn't reach "+label)
 		return nil, false
 	}
 	defer func() { _ = client.Close() }()
-	deps.model.SetPeer(status.Peer{DeviceID: name, State: status.Connected, Link: link, Since: now})
-	deps.model.Log(now, status.LogInfo, "connected to "+name+" over "+string(link))
+	deps.model.SetPeer(status.Peer{DeviceID: peerID, Name: peerName, State: status.Connected, Link: link, Since: now})
+	deps.model.Log(now, status.LogInfo, "connected to "+label+" over "+string(link))
 
 	outcomes, err := converge.Pull(client, deps.target, deps.k, deps.localCat, deps.allow, deps.workDir)
 	if err != nil {
 		deps.model.SetPeer(status.Peer{
-			DeviceID: name, State: status.Unreachable,
+			DeviceID: peerID, Name: peerName, State: status.Unreachable,
 			Reason: status.AuthFailed, Detail: err.Error(), Since: now,
 		})
-		deps.model.Log(now, status.LogError, "sync with "+name+" failed")
+		deps.model.Log(now, status.LogError, "sync with "+label+" failed")
 		return nil, true // connected, but the reconcile failed — not a dial failure
 	}
 	for _, o := range outcomes {
-		deps.model.SetExtSync(toExtSync(o, name, now))
+		deps.model.SetExtSync(toExtSync(o, peerID, now))
 		if o.Action == converge.Applied {
-			deps.model.Log(now, status.LogOK, "applied "+o.Extension+" from "+name)
+			deps.model.Log(now, status.LogOK, "applied "+o.Extension+" from "+label)
 		}
 	}
 	return outcomes, true
@@ -418,18 +450,14 @@ func toExtSync(o converge.Outcome, peer string, now int64) status.ExtSync {
 // when --stun is given), publishes it once so a peer already waiting sees us
 // immediately, and returns the live ICE session for the punch fallback. It
 // returns nils (LAN-only) when no carrier is configured or the first publish
-// fails. label names the carrier for the log line. devID is returned for the ICE
-// controlling tie-break.
-func setupRendezvous(ctx context.Context, carrier rendezvous.Signaling, label, deviceID, stunServer, host string, port int, k *crypto.Keys) (*rendezvousSource, rendezvous.Beacon, string, *icewire.Session) {
+// fails. label names the carrier for the log line. devID is the unique id;
+// devName is the friendly name carried (sealed) in the beacon.
+func setupRendezvous(ctx context.Context, carrier rendezvous.Signaling, label, devID, devName, stunServer, host string, port int, k *crypto.Keys) (*rendezvousSource, rendezvous.Beacon, *icewire.Session) {
 	if carrier == nil {
-		return nil, rendezvous.Beacon{}, "", nil
-	}
-	devID := deviceID
-	if devID == "" {
-		devID = host
+		return nil, rendezvous.Beacon{}, nil
 	}
 	src := &rendezvousSource{sig: carrier, k: k, selfID: devID}
-	beacon := gatherBeacon(devID, host, port, time.Now().Unix())
+	beacon := gatherBeacon(devID, host, devName, port, time.Now().Unix())
 
 	// A STUN server enables the hole-punch fallback: gather an ICE endpoint and
 	// advertise it so a peer we can't dial directly can punch to us.
@@ -443,7 +471,7 @@ func setupRendezvous(ctx context.Context, carrier rendezvous.Signaling, label, d
 		if sess != nil {
 			_ = sess.Close()
 		}
-		return nil, rendezvous.Beacon{}, "", nil
+		return nil, rendezvous.Beacon{}, nil
 	}
 	cands := len(beacon.LANEndpoints)
 	punch := ""
@@ -451,7 +479,7 @@ func setupRendezvous(ctx context.Context, carrier rendezvous.Signaling, label, d
 		punch = ", hole-punch enabled"
 	}
 	fmt.Printf("rendezvous: published beacon %q with %d candidate endpoint(s)%s via %s\n", devID, cands, punch, label)
-	return src, beacon, devID, sess
+	return src, beacon, sess
 }
 
 // lifetimeContext builds the run's deadline: indefinite under --watch (until a

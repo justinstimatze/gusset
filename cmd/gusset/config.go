@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"flag"
 	"fmt"
+	"os"
 
 	"github.com/justinstimatze/gusset/internal/config"
 	"github.com/justinstimatze/gusset/internal/crypto"
@@ -23,6 +24,7 @@ func initCmd(args []string) error {
 	fs := flag.NewFlagSet("init", flag.ContinueOnError)
 	noSalt := fs.Bool("no-salt", false, "derive from the passphrase alone, no per-user salt (only safe with a high-entropy generated passphrase)")
 	importSalt := fs.String("salt", "", "import a base64 salt printed by `gusset init` on another device")
+	deviceName := fs.String("device-name", "", "friendly name for this device shown in the UI (default: hostname)")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -57,11 +59,21 @@ func initCmd(args []string) error {
 		cfg.Salt = salt
 	}
 
+	// Generate this device's stable unique id and friendly name now, so the
+	// identity is set before the first sync. --device-name overrides the default.
+	host, _ := os.Hostname()
+	if *deviceName != "" {
+		cfg.DeviceName = *deviceName
+	}
+	if _, err := cfg.EnsureIdentity(host); err != nil {
+		return err
+	}
+
 	if err := cfg.Save(); err != nil {
 		return err
 	}
 	p, _ := config.Path()
-	fmt.Printf("wrote %s\n", p)
+	fmt.Printf("wrote %s (this device: %s)\n", p, cfg.DeviceName)
 	if len(cfg.Salt) > 0 {
 		b64 := base64.StdEncoding.EncodeToString(cfg.Salt)
 		fmt.Println("per-user salt — run this on every other device to pair them:")

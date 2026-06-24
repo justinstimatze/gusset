@@ -112,9 +112,17 @@ type LogEntry struct {
 // no durable history.
 const maxLog = 50
 
+// Self identifies the local device so the UI can label "this device" and show
+// what peers see it as.
+type Self struct {
+	DeviceID string `json:"device_id"`
+	Name     string `json:"name,omitempty"`
+}
+
 // Snapshot is an immutable, JSON-marshalable view of the whole model — the one
 // shape all three surfaces render. Slices are sorted for stable output.
 type Snapshot struct {
+	Self       Self       `json:"self"`
 	Peers      []Peer     `json:"peers"`
 	Extensions []ExtSync  `json:"extensions"`
 	Log        []LogEntry `json:"log"`
@@ -125,10 +133,19 @@ type Snapshot struct {
 // surface (the localhost WS) can Subscribe to be woken on every change.
 type Model struct {
 	mu    sync.Mutex
+	self  Self
 	peers map[string]Peer
 	exts  map[string]ExtSync
 	log   []LogEntry
 	subs  map[chan struct{}]struct{}
+}
+
+// SetSelf records the local device's identity.
+func (m *Model) SetSelf(deviceID, name string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.self = Self{DeviceID: deviceID, Name: name}
+	m.notify()
 }
 
 // New returns an empty model.
@@ -221,6 +238,7 @@ func (m *Model) Snapshot() Snapshot {
 	defer m.mu.Unlock()
 
 	snap := Snapshot{
+		Self:       m.self,
 		Peers:      make([]Peer, 0, len(m.peers)),
 		Extensions: make([]ExtSync, 0, len(m.exts)),
 		Log:        make([]LogEntry, 0, len(m.log)),
