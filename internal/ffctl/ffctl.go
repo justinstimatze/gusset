@@ -7,14 +7,20 @@
 // shutdown flushes the store and saves the session), and never runs unless the
 // user opts in.
 //
-// Linux and macOS are supported; the two OS-specific seams (how a PID is
-// identified as Firefox, and the default relaunch binary) live in
-// ffctl_linux.go / ffctl_darwin.go. The lock-symlink handling is shared: it is
-// verified against a live Linux profile, and degrades safely elsewhere — if a
-// platform has no parseable "lock" symlink (e.g. macOS may lock via a
-// .parentlock fcntl lock instead), os.Readlink reports "not running", so Stop
-// becomes a no-op and the user simply closes Firefox by hand, exactly as without
-// --restart-firefox. See docs/firefox-internals-verified.md (macOS — UNVERIFIED).
+// The OS-specific seams (how a PID is identified as Firefox, the default
+// relaunch binary, how a process is asked to stop, and how a launch detaches)
+// live in ffctl_unix.go / ffctl_linux.go / ffctl_darwin.go / ffctl_windows.go.
+// The lock-symlink handling here is shared and verified against a live Linux
+// profile; it degrades safely elsewhere. Where a platform has no parseable
+// "lock" symlink — macOS may lock via a .parentlock fcntl lock, and Windows
+// locks via an exclusive open on parent.lock — os.Readlink reports "not
+// running", so Stop becomes a no-op and --restart-firefox can't auto-close the
+// browser; the user closes Firefox by hand, exactly as without the flag. The
+// data-safety guard does NOT rely on this symlink alone: store.profileLocked
+// also probes the platform's parent.lock (fcntl on unix, exclusive-open on
+// Windows), so an apply never writes under a live browser regardless of which
+// lock mechanism the OS uses. See docs/firefox-internals-verified.md
+// (macOS and Windows — UNVERIFIED).
 package ffctl
 
 import (
@@ -25,7 +31,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"syscall"
 	"time"
 )
 
@@ -175,8 +180,8 @@ func Stop(profileDir string, timeout time.Duration) (stopped bool, err error) {
 	if !looksLikeFirefox(pid) {
 		return false, fmt.Errorf("ffctl: lock holder pid %d is not Firefox; refusing to signal it", pid)
 	}
-	if err := syscall.Kill(pid, syscall.SIGTERM); err != nil {
-		return false, fmt.Errorf("ffctl: SIGTERM firefox pid %d: %w", pid, err)
+	if err := terminateProcess(pid); err != nil {
+		return false, fmt.Errorf("ffctl: stop firefox pid %d: %w", pid, err)
 	}
 	deadline := time.Now().Add(timeout)
 	for {
@@ -202,8 +207,8 @@ func Launch(binary string, args ...string) error {
 	if binary == "" {
 		binary = defaultFirefoxBinary()
 	}
-	cmd := exec.Command(binary, args...)                 //nolint:gosec // G204: launches the resolved Firefox binary (a known path), not attacker-supplied input
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true} // detach from gusset's session
+	cmd := exec.Command(binary, args...)  //nolint:gosec // G204: launches the resolved Firefox binary (a known path), not attacker-supplied input
+	cmd.SysProcAttr = detachSysProcAttr() // detach from gusset's session (OS-specific)
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = nil, nil, nil
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("ffctl: launch %s: %w", binary, err)

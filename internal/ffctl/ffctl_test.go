@@ -1,3 +1,10 @@
+//go:build unix
+
+// These tests exercise the unix lock mechanism: the "lock" symlink (<ip>:+<pid>)
+// and /proc-style process identification. On Windows ffctl's symlink functions
+// are inert (Firefox locks via an exclusive parent.lock there) and aren't
+// safety-critical; the safety-critical Windows path is store.parentLockHeld,
+// covered by parentlock_windows_test.go.
 package ffctl
 
 import (

@@ -28,6 +28,12 @@ func firefoxRootCandidates(home string) []string {
 		return []string{
 			filepath.Join(home, "Library", "Application Support", "Firefox"),
 		}
+	case "windows":
+		// Firefox keeps the profile root under %APPDATA% (roaming), which is
+		// <home>\AppData\Roaming on a standard install.
+		return []string{
+			filepath.Join(home, "AppData", "Roaming", "Mozilla", "Firefox"),
+		}
 	default: // linux and other unixes
 		return []string{
 			filepath.Join(home, "snap", "firefox", "common", ".mozilla", "firefox"),

@@ -272,6 +272,42 @@ source knowledge and cross-compiles clean (`GOOS=darwin go build ./...`), but ha
   `--profile`/`--new-instance`, unlike `open -a Firefox`). Overridable with
   `--firefox-bin` for non-standard install locations.
 
+## Windows — UNVERIFIED (no Windows Firefox checked yet; cross-compiles clean)
+
+The Windows support in `internal/profile`, `internal/ffctl`, and
+`internal/store` cross-compiles (`GOOS=windows go build ./...`) and the
+data-safety probe has a CI test (`parentlock_windows_test.go`), but none of it
+has been run against a live Windows Firefox. What is and isn't certain:
+
+- **Profile root** — `%APPDATA%\Mozilla\Firefox` (i.e. `…\AppData\Roaming\…`) is
+  the documented Windows location and is the windows branch in
+  `profile.firefoxRootCandidates`. Confidence: high. `profiles.ini` and the IDB
+  layout downstream are cross-platform Gecko internals.
+- **Process identity** (`ffctl.processStrings`) — no `/proc`; the windows build
+  shells out to `tasklist /FI "PID eq <pid>"`, which yields the image name
+  (`firefox.exe`) — enough for the `firefox` match. Confidence: medium; not
+  safety-critical (see below).
+- **Profile lock — the one mechanism that matters for data safety.** Windows
+  Firefox does **not** write the `lock` symlink; nsProfileLock opens
+  `parent.lock` with an exclusive share mode for the session. So `ffctl`'s
+  symlink functions report "not running" on Windows and `--restart-firefox`
+  degrades to "please close Firefox yourself" (safe — same as not passing the
+  flag). The running-Firefox signal that the apply guard needs comes from
+  `store.parentLockHeld` (windows build): it tries to open `parent.lock`; a
+  sharing violation means Firefox holds it. It **fails toward "locked"** — any
+  open error other than "not found" refuses the write — so the worst case is an
+  over-cautious refusal, never a silent overwrite. The open question for a
+  live-Windows check: *is the lock file named `parent.lock`, and does Firefox
+  open it with a deny-all share mode?* (Mozilla's documented behavior says yes.)
+  `parentlock_windows_test.go` proves the probe against a real exclusive handle
+  (`CreateFile` share mode 0) on the CI runner; only the "is that exactly what
+  Firefox does" half is unverified.
+- **Stop / relaunch** — Windows has no SIGTERM; `terminateProcess` uses
+  `taskkill /PID` (a close request Firefox can handle cleanly), and
+  `defaultFirefoxBinary` probes `%ProgramFiles%`/`%ProgramFiles(x86)%`. Both are
+  only reached if a holder PID is ever obtained, which the symlink path can't do
+  on Windows today — so they're latent until Windows auto-restart is wired.
+
 ## Net effect on the package layout
 
 - `internal/profile/` — profile-root probe must handle snap/flatpak/plain (DELTA

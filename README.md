@@ -11,8 +11,10 @@ The name is the metaphor: a gusset is the small inserted piece that joins two
 parts and keeps the seam from failing. gusset joins your machines at the one
 joint Firefox leaves open.
 
-Target: **Firefox first**, on **macOS and Linux**. See [docs/design.md](docs/design.md)
-for the design rationale and [docs/firefox-internals-verified.md](docs/firefox-internals-verified.md)
+Target: **Firefox first**, on **Linux, macOS, and Windows**. Linux is the
+verified path; macOS and Windows build and pass CI but aren't yet dogfood-tested
+against a live browser. See [docs/design.md](docs/design.md) for the design
+rationale and [docs/firefox-internals-verified.md](docs/firefox-internals-verified.md)
 for the load-bearing internals, verified against a live profile.
 
 ## Status
@@ -24,7 +26,9 @@ passphrase-derived mutual TLS. `gusset sync` syncs allowlisted extensions betwee
 two machines, finding each other by mDNS on the same network, or — across
 networks — by trading sealed beacons through a shared folder (`--rendezvous-dir`).
 When no direct route works and `--stun` is set, it punches through NATs (ICE) and
-reconciles over the punched connection. Runs on Linux and macOS.
+reconciles over the punched connection. Runs on Linux and macOS, and builds for
+Windows (the running-Firefox safety guard there is CI-tested but not yet verified
+against a live Windows Firefox).
 
 **Trying it?** [TESTING.md](TESTING.md) is a staged quickstart (most-proven path
 first). The CLI sync is the well-tested core; the companion extension end-to-end
