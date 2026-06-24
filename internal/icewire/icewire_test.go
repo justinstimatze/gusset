@@ -9,8 +9,8 @@ import (
 	"time"
 
 	"github.com/pion/logging"
-	"github.com/pion/transport/v3/vnet"
-	"github.com/pion/turn/v3"
+	"github.com/pion/transport/v4/vnet"
+	"github.com/pion/turn/v4"
 
 	"github.com/justinstimatze/gusset/internal/crypto"
 	"github.com/justinstimatze/gusset/internal/icewire"
@@ -151,7 +151,7 @@ func buildVNet(t *testing.T) *vnetTopo {
 
 	wan, err := vnet.NewRouter(&vnet.RouterConfig{CIDR: "0.0.0.0/0", LoggerFactory: lf})
 	must(t, err)
-	wanNet, err := vnet.NewNet(&vnet.NetConfig{StaticIP: wanSTUNIP})
+	wanNet, err := vnet.NewNet(&vnet.NetConfig{StaticIPs: []string{wanSTUNIP}})
 	must(t, err)
 	must(t, wan.AddNet(wanNet))
 

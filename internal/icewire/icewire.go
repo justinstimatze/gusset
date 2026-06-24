@@ -25,9 +25,9 @@ import (
 	"net"
 	"time"
 
-	"github.com/pion/ice/v3"
-	"github.com/pion/stun/v2"
-	pnet "github.com/pion/transport/v3"
+	"github.com/pion/ice/v4"
+	"github.com/pion/stun/v3"
+	pnet "github.com/pion/transport/v4"
 	"github.com/quic-go/quic-go"
 
 	"github.com/justinstimatze/gusset/internal/transport"
