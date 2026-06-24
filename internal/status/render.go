@@ -4,7 +4,9 @@ import (
 	"fmt"
 	"io"
 	"strconv"
+	"strings"
 	"time"
+	"unicode"
 )
 
 // noReason is the loud fallback for a non-converged state that arrived without
@@ -99,7 +101,9 @@ func Render(w io.Writer, snap Snapshot, now int64) {
 		if why := PeerWhy(p); why != "" {
 			state += ": " + why
 		}
-		fmt.Fprintf(w, "  %-20s %-28s %s\n", name, state, ago(now, p.Since))
+		// name comes from a peer's beacon/mDNS label and state may fold in
+		// peer-supplied Detail — sanitize before it reaches the terminal.
+		fmt.Fprintf(w, "  %-20s %-28s %s\n", sanitize(name), sanitize(state), ago(now, p.Since))
 	}
 
 	fmt.Fprintln(w, "extensions:")
@@ -111,8 +115,25 @@ func Render(w io.Writer, snap Snapshot, now int64) {
 		if why := ExtWhy(e); why != "" {
 			state += ": " + why
 		}
-		fmt.Fprintf(w, "  %-44s -> %-16s %-32s %s\n", e.Extension, e.DeviceID, state, ago(now, e.Since))
+		// Extension id and peer id arrive over the wire; state may fold in
+		// peer-supplied Detail — sanitize each before the terminal sees it.
+		fmt.Fprintf(w, "  %-44s -> %-16s %-32s %s\n", sanitize(e.Extension), sanitize(e.DeviceID), sanitize(state), ago(now, e.Since))
 	}
+}
+
+// sanitize neutralizes a remote-supplied string before it is written to a
+// terminal: any non-printable rune (ANSI escapes, carriage returns, bells, other
+// control or format characters a peer could embed in a beacon label or detail
+// string) becomes the visible replacement character, so tampering shows up rather
+// than executing as a terminal control sequence. Ordinary printable Unicode
+// (including non-ASCII hostnames) passes through unchanged.
+func sanitize(s string) string {
+	return strings.Map(func(r rune) rune {
+		if unicode.IsPrint(r) {
+			return r
+		}
+		return '�'
+	}, s)
 }
 
 // ago renders a coarse "Xs/Xm/Xh/Xd ago" for a unix-seconds timestamp. A zero or

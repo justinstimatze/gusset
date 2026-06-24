@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- `internal/status` hardening: the renderer now sanitizes peer-supplied strings
+  (beacon/mDNS labels, device ids, and free-text detail) before they reach the
+  terminal — any non-printable rune (ANSI escapes, carriage returns, bells)
+  becomes a visible replacement character instead of executing as a control
+  sequence. Closes the terminal-injection note from the Tier-1 security review;
+  ordinary printable Unicode (non-ASCII hostnames) is unaffected.
 - NAT hole-punching wired into `gusset sync` (HANDOFF item 16, increment 2). When
   `--stun` is set on the rendezvous path, the device now also gathers an ICE
   endpoint (creds + candidates) and advertises it, sealed, inside its beacon

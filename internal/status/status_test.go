@@ -131,6 +131,34 @@ func TestRender_ShowsReasons(t *testing.T) {
 	}
 }
 
+func TestRender_SanitizesPeerSuppliedStrings(t *testing.T) {
+	// A peer controls its beacon label and an error detail; both reach the
+	// terminal. An embedded ANSI escape / control sequence must not survive the
+	// render — it is neutralized, not executed.
+	m := New()
+	m.SetPeer(Peer{
+		DeviceID: "evil\x1b[2Jname\r",
+		State:    Unreachable, Reason: PeerOffline,
+		Detail: "dial \x07\x1b[31mfailed", Since: 1_749_999_000,
+	})
+	m.SetExtSync(ExtSync{Extension: "ext\x1b]0;pwned\x07", DeviceID: "evil\x1bID", State: Errored, Detail: "boom\x1b[0m", Since: 1_749_999_000})
+
+	var buf bytes.Buffer
+	Render(&buf, m.Snapshot(), 1_750_000_000)
+	out := buf.String()
+
+	for _, bad := range []string{"\x1b", "\x07", "\r"} {
+		if strings.ContainsRune(out, []rune(bad)[0]) {
+			t.Fatalf("render leaked control byte %q into terminal output:\n%q", bad, out)
+		}
+	}
+	// The benign parts of the names still render (just with the control bytes
+	// replaced), so the user can still tell which peer it is.
+	if !strings.Contains(out, "evil") || !strings.Contains(out, "name") {
+		t.Errorf("sanitize stripped too much; printable text should survive:\n%s", out)
+	}
+}
+
 func TestSnapshot_JSONShape(t *testing.T) {
 	m := New()
 	m.SetPeer(Peer{DeviceID: "a", State: Connected, Link: LinkLAN, Since: 1})
