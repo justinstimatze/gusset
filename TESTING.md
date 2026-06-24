@@ -9,9 +9,10 @@ tested" to "experimental," so start at the top.
 > It stages changes, keeps a backup until the swap succeeds, and **refuses to
 > write while Firefox is running** — but this is a test build pointed at your
 > real data, so copy your Firefox profile folder somewhere safe before you start.
-> Find it with `gusset doctor`. On **macOS** the running-Firefox detection is
-> less certain than on Linux, so always close Firefox yourself before a sync that
-> will apply.
+> Find it with `gusset doctor`. Apply detects a running Firefox two ways (the
+> profile `lock` symlink and an fcntl lock on `.parentlock`), which covers both
+> Linux and macOS — but macOS isn't verified against a live Mac yet, so close
+> Firefox yourself there to be safe.
 
 ## What you need
 

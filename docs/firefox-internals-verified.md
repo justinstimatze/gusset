@@ -258,6 +258,15 @@ source knowledge and cross-compiles clean (`GOOS=darwin go build ./...`), but ha
   gates every signal). The open question for a live-Mac check: *does macOS Firefox
   write a parseable `lock` symlink?* If not and auto-restart on macOS is wanted, add
   a `.parentlock`-aware holder lookup to the darwin build.
+  - **Data-safety guard (`store.Apply`) covers both mechanisms.** Apply must never
+    write under a live browser, so `profileLocked` refuses when *either* the `lock`
+    symlink classifies as live/unparseable (`ffctl.InspectLock`) *or* a live process
+    holds an fcntl lock on `.parentlock` (a `F_GETLK` probe — query-only, so a
+    lingering `.parentlock` no process holds never causes a false refusal). Whichever
+    primitive a given Firefox build uses, one of the two catches it. This is verified
+    on Linux (the symlink path; the fcntl probe reads negative there because snap
+    Firefox does not POSIX-lock `.parentlock`) and is the best-effort macOS path until
+    a live-Mac check confirms which primitive macOS uses.
 - **Relaunch binary** (`ffctl.defaultFirefoxBinary`) — darwin defaults to
   `/Applications/Firefox.app/Contents/MacOS/firefox` (the inner binary forwards
   `--profile`/`--new-instance`, unlike `open -a Firefox`). Overridable with

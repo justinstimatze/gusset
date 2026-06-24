@@ -144,19 +144,40 @@ func TestApply_RefusesTraversalSnapshot(t *testing.T) {
 	}
 }
 
-func TestApply_RefusesLockedProfile(t *testing.T) {
+// TestApply_RefusesUnparseableLock checks the fail-closed path: a "lock" symlink
+// whose target can't be parsed for a PID (so liveness can't be judged) must be
+// treated as locked rather than written over.
+func TestApply_RefusesUnparseableLock(t *testing.T) {
 	src, _ := liveFirefox(t)
 	snap, err := src.Snapshot(uBOExtensionID, t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
 	targetProfile := newTargetProfile(t, uBOExtensionID)
-	// Simulate a running Firefox by creating the lock symlink.
-	if err := os.Symlink("127.0.1.1:+1234", filepath.Join(targetProfile, "lock")); err != nil {
+	if err := os.Symlink("not-a-parseable-lock-target", filepath.Join(targetProfile, "lock")); err != nil {
 		t.Skipf("cannot create symlink: %v", err)
 	}
 	if err := NewFirefox(targetProfile).Apply(snap.Dir); !errors.Is(err, ErrProfileLocked) {
-		t.Fatalf("expected ErrProfileLocked, got %v", err)
+		t.Fatalf("expected ErrProfileLocked for an unparseable lock, got %v", err)
+	}
+}
+
+// TestApply_ProceedsOverStaleLock documents the precision win: a lock symlink
+// whose holder PID is not a live Firefox is stale and safe to write over, so
+// Apply must not refuse on it (a crash-leftover lock should not block forever).
+func TestApply_ProceedsOverStaleLock(t *testing.T) {
+	src, _ := liveFirefox(t)
+	snap, err := src.Snapshot(uBOExtensionID, t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	targetProfile := newTargetProfile(t, uBOExtensionID)
+	// PID 1 (init) is alive but is not Firefox, so this classifies as stale.
+	if err := os.Symlink("127.0.1.1:+1", filepath.Join(targetProfile, "lock")); err != nil {
+		t.Skipf("cannot create symlink: %v", err)
+	}
+	if err := NewFirefox(targetProfile).Apply(snap.Dir); errors.Is(err, ErrProfileLocked) {
+		t.Fatalf("Apply refused a stale lock; should have proceeded: %v", err)
 	}
 }
 

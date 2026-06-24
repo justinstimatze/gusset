@@ -11,6 +11,7 @@ import (
 	"regexp"
 	"strconv"
 
+	"github.com/justinstimatze/gusset/internal/ffctl"
 	"github.com/justinstimatze/gusset/internal/profile"
 )
 
@@ -51,7 +52,7 @@ func (f *Firefox) Apply(snapshotDir string) error {
 	if err := validateMetaPaths(meta); err != nil {
 		return err
 	}
-	if locked, _ := profileLocked(f.ProfileDir); locked {
+	if profileLocked(f.ProfileDir) {
 		return ErrProfileLocked
 	}
 
@@ -199,15 +200,24 @@ func synthMetadataV2(snapshotDir, dst, srcUUID, dstUUID string) error {
 	return os.WriteFile(dst, data, 0o600) //nolint:gosec // G703: dst is built from meta fields validated by validateMetaPaths
 }
 
-// profileLocked reports whether Firefox appears to have the profile open. On a
-// clean shutdown Firefox removes the "lock" symlink, so its presence is a strong
-// running signal; we intentionally do not key off ".parentlock", which can
-// linger after a crash and would cause false refusals.
-func profileLocked(profileDir string) (bool, error) {
-	if _, err := os.Lstat(filepath.Join(profileDir, "lock")); err == nil {
-		return true, nil
+// profileLocked reports whether Firefox appears to have the profile open, erring
+// toward refusal since writing the store out from under a running Firefox risks
+// corruption. It combines the two lock mechanisms nsProfileLock can use:
+//
+//   - the "lock" symlink, classified by ffctl.InspectLock — refuse when a live
+//     Firefox holds it (LockedLive) or its target is unparseable (LockUnknown);
+//     a verified-stale lock (the holder is gone) is safe to write over.
+//   - an fcntl lock on .parentlock, the primitive used where no parseable symlink
+//     is written (the open question for macOS). The F_GETLK probe only flags a
+//     lock a live process actually holds, so a lingering .parentlock never causes
+//     a false refusal.
+//
+// Whichever mechanism the running Firefox uses, one of the two catches it.
+func profileLocked(profileDir string) bool {
+	if st, _, _ := ffctl.InspectLock(profileDir); st == ffctl.LockedLive || st == ffctl.LockUnknown {
+		return true
 	}
-	return false, nil
+	return parentLockHeld(profileDir)
 }
 
 func readMeta(dir string) (Meta, error) {
