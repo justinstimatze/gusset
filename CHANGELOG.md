@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- Companion Firefox WebExtension under `extension/` (WXT + React + Tailwind,
+  Manifest V3): the production `storage.sync` beacon courier and the status UI.
+  It owns the single daemon connection in its background event page, bridges the
+  daemon's beacon to `storage.sync` (writing under a per-install namespaced key)
+  and reports peers back, and renders the live status in a popup with a pairing
+  form. The WebSocket client is a state machine with first-frame token auth and
+  backoff reconnect — a rejected token surfaces "token rejected", a missing
+  daemon "daemon not running", never a silent spinner. Unit-tested (vitest) for
+  the connection state machine and the carrier's namespacing; an `extension` CI
+  job typechecks, tests, and builds it. First increment — the status-grid
+  dashboard is still to come.
 - The localhost WebSocket is now the production beacon carrier as well as the
   status stream. The daemon cannot touch the `storage.sync` API — only the
   extension can — so the WS server implements `rendezvous.Signaling` by proxy:
