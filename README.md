@@ -11,8 +11,8 @@ The name is the metaphor: a gusset is the small inserted piece that joins two
 parts and keeps the seam from failing. gusset joins your machines at the one
 joint Firefox leaves open.
 
-Target: **Firefox first**, on **macOS and Linux**. See [HANDOFF.md](HANDOFF.md)
-for the full design and [docs/firefox-internals-verified.md](docs/firefox-internals-verified.md)
+Target: **Firefox first**, on **macOS and Linux**. See [docs/design.md](docs/design.md)
+for the design rationale and [docs/firefox-internals-verified.md](docs/firefox-internals-verified.md)
 for the load-bearing internals, verified against a live profile.
 
 ## Status
@@ -20,14 +20,17 @@ for the load-bearing internals, verified against a live profile.
 Working CLI; no companion extension yet. The full local pipeline is in place —
 profile resolver, store snapshot+apply (UUID re-homing), policy allowlist,
 passphrase crypto, content-defined chunking, and the device-to-device transport
-(Tier-0 LAN-direct over passphrase-derived mutual TLS). `gusset sync` syncs
-allowlisted extensions between two machines, finding each other by mDNS on the
-same network, or — across networks — by trading sealed beacons through a shared
-folder (`--rendezvous-dir`, Tier 1). Runs on Linux and macOS.
+over passphrase-derived mutual TLS. `gusset sync` syncs allowlisted extensions
+between two machines, finding each other by mDNS on the same network, or — across
+networks — by trading sealed beacons through a shared folder
+(`--rendezvous-dir`). When no direct route works and `--stun` is set, it punches
+through NATs (ICE) and reconciles over the punched connection. Runs on Linux and
+macOS.
 
-Not yet built: the companion WebExtension (which will carry beacons over Firefox
-Sync's `storage.sync` and host the status UI) and NAT hole-punching for the
-harder NAT pairs. See [HANDOFF.md](HANDOFF.md) for the roadmap.
+Not yet built: the companion WebExtension, which will carry beacons over Firefox
+Sync's `storage.sync` and host the status UI, and a relay for the symmetric-NAT
+pairs hole-punching can't cross. See [docs/design.md](docs/design.md) for the
+design.
 
 ## Build
 
@@ -42,7 +45,7 @@ make lint       # golangci-lint
 ```sh
 gusset version   # build version
 gusset doctor    # resolve the active Firefox profile, list installed extensions
-gusset init      # create the config (optionally a per-user salt to pair devices)
+gusset init      # create the config and a per-user salt (prints a command to pair other devices)
 gusset allow ID  # opt an extension into syncing (the allowlist is empty by default)
 gusset status    # show peers and per-extension sync state, with reasons
 gusset sync      # sync allowlisted extensions with a peer (see `gusset sync --help`)

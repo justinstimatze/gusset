@@ -2,6 +2,7 @@ package config
 
 import (
 	"bytes"
+	"path/filepath"
 	"reflect"
 	"testing"
 
@@ -26,7 +27,7 @@ func TestSaveLoad_RoundTrip(t *testing.T) {
 		Salt:           salt,
 		Allowlist:      []string{"uBlock0@raymondhill.net"},
 		Overrides:      []string{"keepassxc-browser@keepassxc.org"},
-		PassphraseFile: "/home/x/.config/gusset/passphrase",
+		PassphraseFile: filepath.Join(t.TempDir(), "passphrase"),
 	}
 	if err := c.Save(); err != nil {
 		t.Fatal(err)

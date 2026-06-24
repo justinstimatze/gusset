@@ -1,6 +1,6 @@
-// Package icewire is gusset's NAT-traversal data path (HANDOFF item 16): when a
-// direct dial to a peer's LAN or reflexive endpoints fails, two devices punch a
-// hole with ICE and carry the chunk protocol over it.
+// Package icewire is gusset's NAT-traversal data path: when a direct dial to a
+// peer's LAN endpoints fails, two devices punch a hole with ICE and carry the
+// chunk protocol over it.
 //
 // A punched ICE path is a UDP datagram conn, but the chunk protocol
 // (internal/transport) needs a reliable, ordered, mutually-authenticated byte

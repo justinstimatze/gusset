@@ -1,9 +1,9 @@
 # gusset — transport, privacy & security
 
-Authoritative design for the data plane and its security model. This supersedes
-the original "git store-and-forward" sketch in HANDOFF.md. Decisions here were
-made deliberately with the threat of syncing sensitive extension data (the
-canonical example: a password-manager extension) front of mind.
+Authoritative design for the data plane and its security model; the architecture
+overview is in [design.md](design.md). Decisions here were made deliberately with
+the threat of syncing sensitive extension data (the canonical example: a
+password-manager extension) front of mind.
 
 ## The pivot, in one paragraph
 
@@ -203,8 +203,8 @@ stale(peer-offline) | blocked(denylisted; override with …) | error(detail)`.
 - `gusset status` — rich CLI, sibling to `gusset doctor`.
 - The companion extension UI — per-extension × per-device grid, the natural home.
 - A machine-readable JSON status over the localhost WebSocket (the same channel
-  the extension already uses to reach the daemon — see HANDOFF "daemon↔extension
-  channel"), so the UI just renders what the daemon reports.
+  the extension already uses to reach the daemon — see the design's
+  daemon↔extension channel), so the UI just renders what the daemon reports.
 
 Design rule: there is no silent "nothing happened." If an allowlisted extension
 is not converging, `gusset status` names the reason.

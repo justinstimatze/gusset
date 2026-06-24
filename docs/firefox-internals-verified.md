@@ -1,8 +1,9 @@
-# Firefox internals — VERIFY FIRST results
+# Firefox internals — verified
 
-Verified against a **live profile** on this machine, 2026-06-23. Pairs with the
-"VERIFY FIRST" section of `HANDOFF.md`. Where reality differs from the doc's
-assumptions, the delta is called out as **DELTA** — those change the design.
+Verified against a **live profile**, 2026-06-23. These are the load-bearing
+internals [design.md](design.md) relies on; where reality differs from the
+WebExtensions/Firefox assumptions the design started from, the delta is called
+out as **DELTA** — those change the design.
 
 ## Test environment
 
@@ -16,7 +17,7 @@ assumptions, the delta is called out as **DELTA** — those change the design.
 Profile root is `~/snap/firefox/common/.mozilla/firefox/`, **not**
 `~/.mozilla/firefox/`. `~/.mozilla/firefox/` does not exist here at all.
 
-The HANDOFF "Cross-platform: just path resolution" table treats "Linux" as one
+The design's cross-platform table treats "Linux" as one
 path. It is not. The profile-root resolver must probe, in order:
 
 1. `~/snap/firefox/common/.mozilla/firefox/` (snap — Ubuntu default since 22.04)
@@ -110,7 +111,7 @@ machine B (different UUID), rewrite **all three**:
    `moz-extension://ba8ff762-…^userContextId=4294967295`.
 
 Miss any one and Firefox's QuotaManager will reject or orphan the store. This is
-the concrete shape of the "UUID resolution on the other side" the HANDOFF calls
+the concrete shape of the "UUID resolution on the other side" the design calls
 for — it belongs in `internal/store/firefox.go`.
 
 ---
@@ -122,7 +123,7 @@ for — it belongs in `internal/store/firefox.go`.
   sync_change_counter)`, `storage_sync_mirror`, `meta`.
 - **The companion-extension manifests land here as JSON TEXT** keyed by ext_id —
   good: the courier writes plain JSON via the supported `storage.sync` API, and
-  we never touch this sqlite directly (HANDOFF's rejected fragile path stays
+  we never touch this sqlite directly (the design's rejected fragile path stays
   rejected).
 - Quota constants (~100 KB/8 KB/512 items) were NOT independently re-derived from
   source here — they're not in prefs. Treat as still-to-confirm against

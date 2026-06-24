@@ -2,18 +2,52 @@
 
 ## Unreleased
 
+- Security: TLS peer pinning now also covers resumed sessions. The mutual-TLS
+  configs gained a `VerifyConnection` pin (invoked on resumed TLS 1.3 handshakes,
+  which skip `VerifyPeerCertificate`) and the server disables session tickets, so
+  a resumed connection cannot bypass the passphrase-derived key pin.
+- Security default: `gusset init` now generates a per-user salt by default (it
+  prints a one-line command to pair other devices); `--no-salt` opts back into
+  passphrase-only derivation. Salting Argon2id per user means a weak
+  bring-your-own passphrase is not precomputation-attackable and keys never link
+  across users.
+- Removed the server-reflexive beacon candidate (and the now-unused
+  `internal/stunc`): it was usually undialable and leaked the device's public IP
+  and an internal port into the beacon. Cross-NAT reachability rides the ICE
+  hole-punch endpoint instead.
+- Tooling: pinned the Go toolchain to a patched release and added `govulncheck`,
+  `gosec`, `errorlint`, and CodeQL to CI; pinned all GitHub Actions to commit
+  SHAs; added a macOS test matrix (so the darwin `ffctl` path is built), release
+  build-provenance attestation, and the usual community-health files
+  (`CONTRIBUTING.md`, `CODEOWNERS`, issue/PR templates).
+- Docs: replaced the working-notes `HANDOFF.md` with a trimmed
+  [`docs/design.md`](docs/design.md) written for readers rather than as a tracker.
+- Security: `store.Apply` now validates the path-bearing fields of a snapshot's
+  `meta.json` (`idb_file_base`, `origin_suffix`, `source_uuid`) before building
+  any filesystem path. These arrive from a remote peer and were joined into
+  paths under the Firefox profile; a crafted snapshot with `..` segments could
+  escape the staging directory and write outside the profile. Apply now fails
+  closed on anything that isn't the expected shape (a bare basename, a
+  QuotaManager origin suffix, a canonical UUID).
+- Security: `gusset sync` refuses a passphrase file that is readable by group or
+  other (mode `& 0o077 != 0`) instead of silently loading the root secret from a
+  world-readable file. The error names the file and suggests `chmod 600`.
+- Tests: added direct coverage for the two STUN address decoders (the only
+  untrusted-input parsers that lacked a named test — truncated values at every
+  family boundary now must fail closed without panicking) and for `crypto.Stream`
+  (the cross-machine determinism the chunker polynomial depends on).
 - `internal/status` hardening: the renderer now sanitizes peer-supplied strings
   (beacon/mDNS labels, device ids, and free-text detail) before they reach the
   terminal — any non-printable rune (ANSI escapes, carriage returns, bells)
   becomes a visible replacement character instead of executing as a control
   sequence. Closes the terminal-injection note from the Tier-1 security review;
   ordinary printable Unicode (non-ASCII hostnames) is unaffected.
-- NAT hole-punching wired into `gusset sync` (HANDOFF item 16, increment 2). When
-  `--stun` is set on the rendezvous path, the device now also gathers an ICE
-  endpoint (creds + candidates) and advertises it, sealed, inside its beacon
-  (`rendezvous.Beacon.ICE`). When every direct dial to a peer (LAN, then
-  reflexive) fails and that peer published an ICE endpoint, gusset punches a hole
-  with `internal/icewire` and reconciles over it. The punched QUIC connection is
+- NAT hole-punching wired into `gusset sync`. When `--stun` is set on the
+  rendezvous path, the device now also gathers an ICE endpoint (creds +
+  candidates) and advertises it, sealed, inside its beacon
+  (`rendezvous.Beacon.ICE`). When every direct LAN dial to a peer fails and that
+  peer published an ICE endpoint, gusset punches a hole with `internal/icewire`
+  and reconciles over it. The punched QUIC connection is
   bidirectional, so one expensive path carries a full reconcile both ways (we
   serve our offer on the stream the peer opens, and pull theirs on a stream we
   open) rather than the LAN model's two separate connections. The ICE controlling
@@ -22,8 +56,8 @@
   `unreachable (nat-traversal-failed)`. The ICE agent is gathered once per run and
   spent on the first peer that needs it. Coverage boundary unchanged:
   symmetric↔symmetric still needs a TURN relay (Tier-2).
-- `internal/icewire` — NAT-traversal data path (HANDOFF item 16), first increment.
-  Adopts pion/ice for hole-punching and quic-go for a reliable, ordered stream
+- `internal/icewire` — the NAT-traversal data path. Adopts pion/ice for
+  hole-punching and quic-go for a reliable, ordered stream
   over the punched UDP path (ICE alone yields datagrams; the chunk protocol needs
   a stream). QUIC reuses the *same* passphrase-derived pinned-mutual-TLS identity
   as the LAN transport (`transport.Identity`'s configs + a `gusset-chunk/1` ALPN),
@@ -34,8 +68,7 @@
   `AcceptStream` drive pull/serve. Verified end-to-end over pion's virtual network
   (vnet) — two peers behind simulated port-restricted-cone NATs punch and run a
   real chunk `Get`, in-process, no hardware (the approach was de-risked first in
-  spikes/icepunch). Still to wire: ICE fields in the beacon + the `sync.go`
-  fallback when LAN/reflexive dials fail (increment 2).
+  spikes/icepunch).
 - Scaffolded the Go module with the house tooling: git-tag-derived versioning
   (`buildVersion()` fallback chain + `Makefile`), golangci-lint v2, CI (vet,
   gofmt check, `go test -race`, build) and goreleaser release plumbing.
@@ -51,8 +84,8 @@
   the store open (pure-Go `modernc.org/sqlite`, so `CGO_ENABLED=0` builds), and
   captures the out-of-line external value files alongside. Tested against a live
   uBlock Origin store (skips cleanly when no profile is present).
-- Design: codified "Be a good Firefox Sync citizen" in HANDOFF.md — bulk data
-  never rides `storage.sync`, no forced syncs or polling of Mozilla's servers.
+- Design: codified "Be a good Firefox Sync citizen" — bulk data never rides
+  `storage.sync`, no forced syncs or polling of Mozilla's servers.
 - Design pivot (docs/transport-and-security.md): the data plane moves from a
   git/store-and-forward transport to **direct device-to-device** sync, signaled
   through Firefox Sync. v1 transport is Tier-0 same-LAN direct (NAT traversal and

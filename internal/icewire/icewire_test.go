@@ -17,9 +17,9 @@ import (
 	"github.com/justinstimatze/gusset/internal/transport"
 )
 
-// TestConnect_PunchesNATsAndCarriesChunkProtocol is the end-to-end proof for
-// HANDOFF item 16: two devices behind simulated NATs (pion vnet, in-process, no
-// hardware) gather ICE candidates, exchange them the way a sealed beacon would,
+// TestConnect_PunchesNATsAndCarriesChunkProtocol is the end-to-end proof: two
+// devices behind simulated NATs (pion vnet, in-process, no hardware) gather ICE
+// candidates, exchange them the way a sealed beacon would,
 // hole-punch, bring up QUIC over the punched path with the passphrase-pinned
 // identity, and then run gusset's real chunk protocol over it — a Get returns
 // the served bytes. No part of internal/transport or internal/chunk is mocked.

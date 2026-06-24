@@ -11,7 +11,7 @@
 // also lives in the virtual WAN, exchange candidates the way a sealed gusset
 // beacon would carry them (marshal → send → unmarshal → add), and watch ICE
 // punch a hole between them. This is the evidence behind adopting pion/ice for
-// HANDOFF item 16.
+// gusset's NAT-traversal data path.
 //
 // Honest boundary (documented, not asserted here to avoid a flaky negative): a
 // symmetric↔symmetric pair does NOT connect this way — pion/ice does no port
