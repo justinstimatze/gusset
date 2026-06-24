@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -19,12 +20,16 @@ func TestReadPassphrase_RefusesPermissiveFile(t *testing.T) {
 	}
 	cfg := &config.Config{PassphraseFile: path}
 
-	if _, err := readPassphrase(cfg); err == nil || !strings.Contains(err.Error(), "too permissive") {
-		t.Fatalf("expected a too-permissive refusal for mode 0644, got %v", err)
-	}
-
-	if err := os.Chmod(path, 0o600); err != nil {
-		t.Fatal(err)
+	// The mode-bits guard is unix-only (Windows has no Unix perm bits; os.Stat
+	// reports 0666 and access is ACL-governed), so the refusal and the chmod that
+	// follows only apply there. The acceptance + trim check below runs everywhere.
+	if runtime.GOOS != "windows" {
+		if _, err := readPassphrase(cfg); err == nil || !strings.Contains(err.Error(), "too permissive") {
+			t.Fatalf("expected a too-permissive refusal for mode 0644, got %v", err)
+		}
+		if err := os.Chmod(path, 0o600); err != nil {
+			t.Fatal(err)
+		}
 	}
 	got, err := readPassphrase(cfg)
 	if err != nil {

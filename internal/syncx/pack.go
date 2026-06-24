@@ -101,7 +101,12 @@ func Unpack(data []byte, destDir string) error {
 
 // safeJoin joins rel onto base and confirms the result stays within base.
 func safeJoin(base, rel string) (string, bool) {
-	if rel == "" || filepath.IsAbs(rel) {
+	// Reject absolute or rooted entries under either OS's rules. filepath.IsAbs
+	// alone is not enough cross-platform: a unix-absolute "/etc" becomes the
+	// rooted-but-driveless "\etc" once FromSlash'd on Windows (IsAbs reports
+	// false), and a "C:\x" volume path isn't absolute on unix. Reject any leading
+	// separator or volume name outright.
+	if rel == "" || filepath.IsAbs(rel) || rel[0] == '/' || rel[0] == '\\' || filepath.VolumeName(rel) != "" {
 		return "", false
 	}
 	dst := filepath.Join(base, rel)

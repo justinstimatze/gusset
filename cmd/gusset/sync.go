@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync/atomic"
 	"syscall"
@@ -631,9 +632,13 @@ func readPassphrase(cfg *config.Config) (string, error) {
 		}
 		// The passphrase file is the root secret. Refuse it if it is readable by
 		// group or other — a lax umask or a careless copy should fail loudly, not
-		// hand the secret to every local account.
-		if perm := info.Mode().Perm(); perm&0o077 != 0 {
-			return "", fmt.Errorf("passphrase file %s is too permissive (mode %04o); run `chmod 600 %s`", path, perm, path)
+		// hand the secret to every local account. Unix mode bits are meaningless on
+		// Windows (os.Stat reports 0666 regardless; access is governed by ACLs), so
+		// the guard there would reject every passphrase file — skip it.
+		if runtime.GOOS != "windows" {
+			if perm := info.Mode().Perm(); perm&0o077 != 0 {
+				return "", fmt.Errorf("passphrase file %s is too permissive (mode %04o); run `chmod 600 %s`", path, perm, path)
+			}
 		}
 		b, err := os.ReadFile(path) //nolint:gosec // G703: same locally configured passphrase-file path
 		if err != nil {
