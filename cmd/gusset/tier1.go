@@ -2,16 +2,13 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"net"
-	"os"
 	"strconv"
 	"time"
 
 	"github.com/justinstimatze/gusset/internal/crypto"
 	"github.com/justinstimatze/gusset/internal/rendezvous"
 	"github.com/justinstimatze/gusset/internal/status"
-	"github.com/justinstimatze/gusset/internal/stunc"
 )
 
 // rendezvousMaxAge bounds how old a fetched beacon may be before it is ignored:
@@ -20,10 +17,6 @@ import (
 // peer's run stays valid through ours, and the loop re-publishes each pass to
 // keep our own beacon fresh while the window is open.
 const rendezvousMaxAge = 15 * time.Minute
-
-// stunTimeout bounds the single STUN round-trip used to learn the reflexive
-// candidate; a silent or filtered server must not stall the sync.
-const stunTimeout = 4 * time.Second
 
 // rendezvousSource is the Tier-1 peer feed: a Signaling carrier (today a shared
 // folder via rendezvous.DirSignaling, tomorrow the companion extension's
@@ -84,39 +77,30 @@ func (s rendezvousSource) peers(ctx context.Context, now int64) ([]rzPeer, error
 }
 
 // beaconTargets orders a beacon's candidates the way they should be dialed: LAN
-// endpoints first (most likely to work, no NAT in the way), then the reflexive
-// candidate as a best-effort direct-NAT attempt.
+// endpoints first (most likely to work, no NAT in the way). A peer that no LAN
+// endpoint reaches falls back to the ICE hole-punch path (the beacon's ICE
+// endpoint), driven by the caller — there is no direct-public-IP guess, which
+// was usually undialable and leaked the public address into the beacon.
 func beaconTargets(b rendezvous.Beacon) []dialTarget {
 	var targets []dialTarget
 	for _, e := range b.LANEndpoints {
 		targets = append(targets, dialTarget{addr: e, link: status.LinkLAN})
 	}
-	if b.SrvReflexive != "" {
-		targets = append(targets, dialTarget{addr: b.SrvReflexive, link: status.LinkDirectNAT})
-	}
 	return targets
 }
 
 // gatherBeacon builds this device's reachability advertisement: every
-// non-loopback IPv4 at the listener's port, and — when a STUN server is given —
-// the public (server-reflexive) candidate. A STUN failure is non-fatal: the
-// beacon still carries the LAN endpoints, which are what reach a peer on the same
-// routed network or VPN where mDNS multicast does not cross.
-func gatherBeacon(deviceID, instance string, listenPort int, stunServer string, now int64) rendezvous.Beacon {
-	b := rendezvous.Beacon{
+// non-loopback IPv4 at the listener's port. These are what reach a peer on the
+// same routed network or VPN where mDNS multicast does not cross. Cross-NAT
+// reachability rides the ICE endpoint gathered separately (gatherICESession)
+// and advertised alongside this beacon, not a server-reflexive guess.
+func gatherBeacon(deviceID, instance string, listenPort int, now int64) rendezvous.Beacon {
+	return rendezvous.Beacon{
 		DeviceID:     deviceID,
 		Instance:     instance,
 		LANEndpoints: localLANEndpoints(listenPort),
 		IssuedAt:     now,
 	}
-	if stunServer != "" {
-		if srflx, err := reflexiveCandidate(stunServer, listenPort); err != nil {
-			fmt.Fprintf(os.Stderr, "stun: %v (beacon carries LAN endpoints only)\n", err)
-		} else {
-			b.SrvReflexive = srflx
-		}
-	}
-	return b
 }
 
 // localLANEndpoints returns this host's non-loopback IPv4 interface addresses
@@ -141,30 +125,4 @@ func localLANEndpoints(port int) []string {
 		out = append(out, net.JoinHostPort(v4.String(), strconv.Itoa(port)))
 	}
 	return out
-}
-
-// reflexiveCandidate asks a STUN server for this device's public IP and returns
-// that IP at the TCP listener's port. The STUN mapping itself is for the
-// throwaway UDP socket; what a peer can act on is our public IP at the listener
-// port, reachable when the NAT forwards it (a port-forward or an easy/full-cone
-// NAT). Robust per-socket hole-punching for the harder NAT pairs is the deferred
-// ICE step (HANDOFF item 15); until then this is an honest best effort.
-func reflexiveCandidate(stunServer string, listenPort int) (string, error) {
-	conn, err := net.ListenUDP("udp4", &net.UDPAddr{})
-	if err != nil {
-		return "", fmt.Errorf("udp socket: %w", err)
-	}
-	defer func() { _ = conn.Close() }()
-
-	ctx, cancel := context.WithTimeout(context.Background(), stunTimeout)
-	defer cancel()
-	srflx, err := stunc.Reflexive(ctx, conn, stunServer)
-	if err != nil {
-		return "", err
-	}
-	host, _, err := net.SplitHostPort(srflx)
-	if err != nil {
-		return "", fmt.Errorf("parse reflexive %q: %w", srflx, err)
-	}
-	return net.JoinHostPort(host, strconv.Itoa(listenPort)), nil
 }

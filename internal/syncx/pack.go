@@ -131,7 +131,7 @@ func getBytes(r *bytes.Reader) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	if n > uint64(r.Len()) {
+	if n > uint64(r.Len()) { //nolint:gosec // G115: r.Len() is non-negative; this is the bounds check that rejects an oversize length
 		return nil, fmt.Errorf("syncx: entry length %d exceeds remaining %d", n, r.Len())
 	}
 	out := make([]byte, n)

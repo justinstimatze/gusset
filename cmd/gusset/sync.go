@@ -400,10 +400,10 @@ func setupRendezvous(ctx context.Context, rzDir, deviceID, stunServer, host stri
 		devID = host
 	}
 	src := &rendezvousSource{sig: rendezvous.DirSignaling{Dir: rzDir}, k: k, selfID: devID}
-	beacon := gatherBeacon(devID, host, port, stunServer, time.Now().Unix())
+	beacon := gatherBeacon(devID, host, port, time.Now().Unix())
 
-	// A STUN server also enables the hole-punch fallback: gather an ICE endpoint
-	// and advertise it so a peer we can't dial directly can punch to us.
+	// A STUN server enables the hole-punch fallback: gather an ICE endpoint and
+	// advertise it so a peer we can't dial directly can punch to us.
 	var sess *icewire.Session
 	if stunServer != "" {
 		sess, beacon.ICE = gatherICESession(stunServer)
@@ -417,9 +417,6 @@ func setupRendezvous(ctx context.Context, rzDir, deviceID, stunServer, host stri
 		return nil, rendezvous.Beacon{}, "", nil
 	}
 	cands := len(beacon.LANEndpoints)
-	if beacon.SrvReflexive != "" {
-		cands++
-	}
 	punch := ""
 	if beacon.ICE != nil {
 		punch = ", hole-punch enabled"
@@ -509,10 +506,20 @@ func readPassphrase(cfg *config.Config) (string, error) {
 		if path == "" {
 			continue
 		}
-		b, err := os.ReadFile(path)
+		info, err := os.Stat(path) //nolint:gosec // G703: path is a locally configured passphrase-file location, not remote input
 		if errors.Is(err, os.ErrNotExist) {
 			continue
 		}
+		if err != nil {
+			return "", fmt.Errorf("read passphrase file %s: %w", path, err)
+		}
+		// The passphrase file is the root secret. Refuse it if it is readable by
+		// group or other — a lax umask or a careless copy should fail loudly, not
+		// hand the secret to every local account.
+		if perm := info.Mode().Perm(); perm&0o077 != 0 {
+			return "", fmt.Errorf("passphrase file %s is too permissive (mode %04o); run `chmod 600 %s`", path, perm, path)
+		}
+		b, err := os.ReadFile(path) //nolint:gosec // G703: same locally configured passphrase-file path
 		if err != nil {
 			return "", fmt.Errorf("read passphrase file %s: %w", path, err)
 		}

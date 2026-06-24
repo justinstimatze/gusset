@@ -84,7 +84,7 @@ func (f *Firefox) Snapshot(extID, workDir string) (*Snapshot, error) {
 	// grandparent of the sqlite (<origin>/idb/<base>.sqlite).
 	originDir := filepath.Dir(filepath.Dir(dbPath))
 	if md, err := os.ReadFile(filepath.Join(originDir, ".metadata-v2")); err == nil {
-		if err := os.WriteFile(filepath.Join(dir, "metadata-v2"), md, 0o600); err != nil {
+		if err := os.WriteFile(filepath.Join(dir, "metadata-v2"), md, 0o600); err != nil { //nolint:gosec // G703: dir is gusset's own freshly-created snapshot directory, not remote input
 			return nil, fmt.Errorf("capturing .metadata-v2: %w", err)
 		}
 	}
@@ -187,7 +187,7 @@ func vacuumInto(srcPath, destPath string) error {
 	defer func() { _ = db.Close() }()
 	// VACUUM INTO does not accept a bound parameter for the path on all sqlite
 	// builds; embed it as an escaped string literal.
-	stmt := "VACUUM INTO '" + strings.ReplaceAll(destPath, "'", "''") + "'"
+	stmt := "VACUUM INTO '" + strings.ReplaceAll(destPath, "'", "''") + "'" //nolint:gosec // G202: VACUUM INTO cannot bind the path; the literal is single-quote-escaped
 	if _, err := db.Exec(stmt); err != nil {
 		return fmt.Errorf("VACUUM INTO snapshot: %w", err)
 	}
@@ -233,7 +233,7 @@ func copyExternalFiles(srcDir, destDir string, ids []int) error {
 		if err != nil {
 			return fmt.Errorf("reading external value %d: %w", id, err)
 		}
-		if err := os.WriteFile(filepath.Join(destDir, name), data, 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(destDir, name), data, 0o644); err != nil { //nolint:gosec // G703: destDir is gusset's own freshly-created snapshot directory; name is a numeric id
 			return fmt.Errorf("writing external value %d: %w", id, err)
 		}
 	}

@@ -264,7 +264,7 @@ func readFrame(r *bufio.Reader, limit int, tooLong error) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("transport: read frame length: %w", err)
 	}
-	if n > uint64(limit) {
+	if n > uint64(limit) { //nolint:gosec // G115: limit is a positive constant cap; widening for the bounds compare
 		return nil, tooLong
 	}
 	buf := make([]byte, n)

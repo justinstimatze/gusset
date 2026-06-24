@@ -9,17 +9,20 @@ import (
 	"github.com/justinstimatze/gusset/internal/crypto"
 )
 
-// initCmd creates the config directory and an empty config. By default key
-// derivation uses the passphrase alone (crypto.AppSalt), so the same 8 words
-// reproduce keys on every machine with no extra sharing. --new-salt opts into
-// the per-user-salt hardening: it generates a salt that you must copy to every
-// other device (with --salt <b64>), in exchange for per-target Argon2id cost and
-// no cross-user key linkage. init refuses to overwrite an existing config, since
-// clobbering a shared salt would orphan a paired device.
+// initCmd creates the config directory and an empty config. By default it
+// generates a per-user salt: the first device prints a one-line command to run
+// on every other device (which imports the salt with --salt <b64>), and in
+// exchange key derivation is per-user — Argon2id is salted, so a weak
+// bring-your-own passphrase is not precomputation-attackable and keys never link
+// across users. --no-salt opts out, deriving from the passphrase alone
+// (crypto.AppSalt) so the same 8 words reproduce keys with no extra sharing —
+// appropriate only for a high-entropy generated passphrase. init refuses to
+// overwrite an existing config, since clobbering a shared salt would orphan a
+// paired device.
 func initCmd(args []string) error {
 	fs := flag.NewFlagSet("init", flag.ContinueOnError)
-	newSalt := fs.Bool("new-salt", false, "generate a per-user salt (must be shared to other devices)")
-	importSalt := fs.String("salt", "", "import a base64 salt printed by `init --new-salt` on another device")
+	noSalt := fs.Bool("no-salt", false, "derive from the passphrase alone, no per-user salt (only safe with a high-entropy generated passphrase)")
+	importSalt := fs.String("salt", "", "import a base64 salt printed by `gusset init` on another device")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -44,7 +47,9 @@ func initCmd(args []string) error {
 			return fmt.Errorf("--salt too short: need %d bytes", crypto.SaltLen)
 		}
 		cfg.Salt = salt
-	case *newSalt:
+	case *noSalt:
+		// passphrase-only: leave cfg.Salt nil so crypto.AppSalt is used.
+	default:
 		salt, err := crypto.NewSalt()
 		if err != nil {
 			return err

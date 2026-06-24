@@ -1,5 +1,5 @@
 // Command gusset syncs Firefox extension settings (storage.local) across
-// machines — the seam Firefox Sync leaves open. See HANDOFF.md for the design.
+// machines — the seam Firefox Sync leaves open. See docs/design.md for the design.
 package main
 
 import (
@@ -96,7 +96,7 @@ func usage() {
 usage:
   gusset version    print the build version
   gusset doctor     resolve the active Firefox profile and list installed extensions
-  gusset init       create the config (and optionally a per-user salt to pair devices)
+  gusset init       create the config and a per-user salt (--salt to pair a device; --no-salt to skip)
   gusset allow      add extension IDs to the persisted sync allowlist
   gusset disallow   remove extension IDs from the allowlist
   gusset status     report sync status (peers and per-extension state, with reasons)

@@ -25,7 +25,6 @@ func sampleBeacon() Beacon {
 		DeviceID:     "laptop-7f3a",
 		Instance:     "rukh",
 		LANEndpoints: []string{"192.168.1.20:49200"},
-		SrvReflexive: "203.0.113.7:51000",
 		IssuedAt:     1_000_000,
 	}
 }
@@ -42,7 +41,7 @@ func TestSealOpen_RoundTrip(t *testing.T) {
 	}
 	want := sampleBeacon()
 	want.SchemaVersion = SchemaVersion
-	if got.DeviceID != want.DeviceID || got.SrvReflexive != want.SrvReflexive ||
+	if got.DeviceID != want.DeviceID ||
 		len(got.LANEndpoints) != 1 || got.LANEndpoints[0] != want.LANEndpoints[0] {
 		t.Fatalf("round-trip mismatch: got %+v want %+v", got, want)
 	}
@@ -174,13 +173,13 @@ func TestDirSignaling_PublishReplaces(t *testing.T) {
 
 	b := sampleBeacon()
 	b.DeviceID = "device-x"
-	b.SrvReflexive = "203.0.113.7:51000"
+	b.LANEndpoints = []string{"192.168.1.20:51000"}
 	first, _ := Seal(b, k)
 	if err := sig.Publish(ctx, b.DeviceID, first); err != nil {
 		t.Fatal(err)
 	}
 
-	b.SrvReflexive = "203.0.113.9:52000" // re-publish with a new endpoint
+	b.LANEndpoints = []string{"192.168.1.20:52000"} // re-publish with a new endpoint
 	second, _ := Seal(b, k)
 	if err := sig.Publish(ctx, b.DeviceID, second); err != nil {
 		t.Fatal(err)
@@ -198,8 +197,8 @@ func TestDirSignaling_PublishReplaces(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if latest.SrvReflexive != "203.0.113.9:52000" {
-		t.Fatalf("expected the re-published endpoint, got %q", latest.SrvReflexive)
+	if len(latest.LANEndpoints) != 1 || latest.LANEndpoints[0] != "192.168.1.20:52000" {
+		t.Fatalf("expected the re-published endpoint, got %v", latest.LANEndpoints)
 	}
 }
 

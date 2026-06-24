@@ -3,6 +3,7 @@ package crypto
 import (
 	"bytes"
 	"errors"
+	"io"
 	"strings"
 	"testing"
 )
@@ -154,6 +155,40 @@ func TestSubkey_IndependentByLabel(t *testing.T) {
 	again, _ := k.Subkey("label-a", 32)
 	if !bytes.Equal(a, again) {
 		t.Fatal("same label not deterministic")
+	}
+}
+
+// TestStream_DeterministicAndLabelScoped guards the cross-machine invariant that
+// the chunker polynomial is seeded from: two of the user's machines deriving the
+// same keystream is what keeps chunk boundaries (and therefore dedup) aligned, so
+// the stream must be byte-identical for a given (master,label) and independent
+// across labels.
+func TestStream_DeterministicAndLabelScoped(t *testing.T) {
+	k := mustDerive(t, testPass, AppSalt)
+	read := func(label string, n int) []byte {
+		buf := make([]byte, n)
+		if _, err := io.ReadFull(k.Stream(label), buf); err != nil {
+			t.Fatalf("stream read: %v", err)
+		}
+		return buf
+	}
+	a1 := read("chunker-poly", 64)
+	a2 := read("chunker-poly", 64)
+	if !bytes.Equal(a1, a2) {
+		t.Fatal("Stream is not deterministic for the same label")
+	}
+	// A separately-derived Keys with the same passphrase+salt (a second machine)
+	// must yield the identical keystream.
+	k2 := mustDerive(t, testPass, AppSalt)
+	b := make([]byte, 64)
+	if _, err := io.ReadFull(k2.Stream("chunker-poly"), b); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(a1, b) {
+		t.Fatal("Stream diverges across machines for the same passphrase+salt")
+	}
+	if bytes.Equal(a1, read("other-label", 64)) {
+		t.Fatal("different labels produced the same keystream")
 	}
 }
 

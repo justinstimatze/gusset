@@ -54,12 +54,12 @@ func TestRendezvousSource_PeersOrdersFiltersAndExcludesSelf(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// A fresh peer with both a LAN endpoint and a reflexive candidate.
+	// A fresh peer with a LAN endpoint.
 	peer := rendezvousSource{sig: rendezvous.DirSignaling{Dir: dir}, k: k, selfID: "peer"}
 	if err := peer.publish(ctx, rendezvous.Beacon{
 		DeviceID: "peer", Instance: "kestrel",
-		LANEndpoints: []string{"192.168.1.9:2000"}, SrvReflexive: "203.0.113.7:2000",
-		IssuedAt: 1_000_000,
+		LANEndpoints: []string{"192.168.1.9:2000"},
+		IssuedAt:     1_000_000,
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -86,14 +86,11 @@ func TestRendezvousSource_PeersOrdersFiltersAndExcludesSelf(t *testing.T) {
 	if p.deviceID != "peer" || p.instance != "kestrel" {
 		t.Fatalf("wrong peer resolved: %+v", p)
 	}
-	if len(p.targets) != 2 {
-		t.Fatalf("want 2 dial targets (LAN then reflexive), got %d", len(p.targets))
+	if len(p.targets) != 1 {
+		t.Fatalf("want 1 dial target (the LAN endpoint), got %d", len(p.targets))
 	}
 	if p.targets[0].addr != "192.168.1.9:2000" || p.targets[0].link != status.LinkLAN {
-		t.Errorf("first target should be the LAN endpoint, got %+v", p.targets[0])
-	}
-	if p.targets[1].addr != "203.0.113.7:2000" || p.targets[1].link != status.LinkDirectNAT {
-		t.Errorf("second target should be the reflexive direct-NAT candidate, got %+v", p.targets[1])
+		t.Errorf("target should be the LAN endpoint, got %+v", p.targets[0])
 	}
 }
 

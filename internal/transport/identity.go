@@ -73,11 +73,13 @@ func (id *Identity) PublicKey() ed25519.PublicKey {
 // public key matches the same derived identity.
 func (id *Identity) ServerConfig() *tls.Config {
 	return &tls.Config{
-		Certificates:          []tls.Certificate{id.cert},
-		MinVersion:            tls.VersionTLS13,
-		ClientAuth:            tls.RequireAnyClientCert,
-		InsecureSkipVerify:    true, // we pin by public key below, not by CA/expiry
-		VerifyPeerCertificate: id.verifyPinnedPeer,
+		Certificates:           []tls.Certificate{id.cert},
+		MinVersion:             tls.VersionTLS13,
+		ClientAuth:             tls.RequireAnyClientCert,
+		InsecureSkipVerify:     true, //nolint:gosec // G402: peer pinned by public key, not CA/expiry
+		VerifyPeerCertificate:  id.verifyPinnedPeer,
+		VerifyConnection:       id.verifyPinnedConn, // also pins resumed sessions, which skip VerifyPeerCertificate
+		SessionTicketsDisabled: true,                // short-lived sync connections; no resumption to reason about
 	}
 }
 
@@ -88,8 +90,9 @@ func (id *Identity) ClientConfig() *tls.Config {
 	return &tls.Config{
 		Certificates:          []tls.Certificate{id.cert},
 		MinVersion:            tls.VersionTLS13,
-		InsecureSkipVerify:    true, // we pin by public key below, not by CA/host
+		InsecureSkipVerify:    true, //nolint:gosec // G402: peer pinned by public key, not CA/host
 		VerifyPeerCertificate: id.verifyPinnedPeer,
+		VerifyConnection:      id.verifyPinnedConn, // also pins resumed sessions, which skip VerifyPeerCertificate
 	}
 }
 
@@ -111,6 +114,28 @@ func (id *Identity) verifyPinnedPeer(rawCerts [][]byte, _ [][]*x509.Certificate)
 	if !ok {
 		return errors.New("transport: peer certificate is not Ed25519")
 	}
+	return id.pinPub(peerPub)
+}
+
+// verifyPinnedConn re-applies the pin from the assembled connection state. Go
+// invokes VerifyConnection on every handshake — including resumed TLS 1.3
+// sessions, which do not call VerifyPeerCertificate — so this closes the
+// resumption-bypass gap. cs.PeerCertificates carries the peer chain in both the
+// full and resumed cases.
+func (id *Identity) verifyPinnedConn(cs tls.ConnectionState) error {
+	if len(cs.PeerCertificates) == 0 {
+		return errors.New("transport: peer presented no certificate")
+	}
+	peerPub, ok := cs.PeerCertificates[0].PublicKey.(ed25519.PublicKey)
+	if !ok {
+		return errors.New("transport: peer certificate is not Ed25519")
+	}
+	return id.pinPub(peerPub)
+}
+
+// pinPub is the constant-time pin check shared by both verification callbacks:
+// the peer is trusted iff its key equals our passphrase-derived public key.
+func (id *Identity) pinPub(peerPub ed25519.PublicKey) error {
 	if subtle.ConstantTimeCompare(peerPub, id.pub) != 1 {
 		return errors.New("transport: peer authentication failed (wrong passphrase)")
 	}

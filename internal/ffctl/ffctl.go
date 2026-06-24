@@ -202,7 +202,7 @@ func Launch(binary string, args ...string) error {
 	if binary == "" {
 		binary = defaultFirefoxBinary()
 	}
-	cmd := exec.Command(binary, args...)
+	cmd := exec.Command(binary, args...)                 //nolint:gosec // G204: launches the resolved Firefox binary (a known path), not attacker-supplied input
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true} // detach from gusset's session
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = nil, nil, nil
 	if err := cmd.Start(); err != nil {

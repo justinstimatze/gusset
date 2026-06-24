@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 
 	"github.com/justinstimatze/gusset/internal/profile"
@@ -42,6 +43,13 @@ func (f *Firefox) Apply(snapshotDir string) error {
 	}
 	if meta.IDBFileBase == "" {
 		return errors.New("store: snapshot is missing idb_file_base")
+	}
+	// meta comes off the wire (a peer's meta.json), and three of its fields are
+	// concatenated into filesystem paths below. A crafted snapshot must not be
+	// able to escape the profile's storage directory, so validate them before
+	// any path is built — fail closed on anything that isn't the expected shape.
+	if err := validateMetaPaths(meta); err != nil {
+		return err
 	}
 	if locked, _ := profileLocked(f.ProfileDir); locked {
 		return ErrProfileLocked
@@ -131,6 +139,36 @@ func (f *Firefox) Apply(snapshotDir string) error {
 	return nil
 }
 
+// idbFileBaseRE matches a bare filesystem basename: Firefox derives IDBFileBase
+// from the database name alone, so it is always a plain identifier with no path
+// separators. uuidRE matches a canonical 36-char UUID. originSuffixRE matches an
+// empty suffix or a QuotaManager attribute suffix like "^userContextId=4294967295".
+var (
+	idbFileBaseRE  = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
+	uuidRE         = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
+	originSuffixRE = regexp.MustCompile(`^(\^[A-Za-z0-9_]+=[0-9A-Za-z]+)*$`)
+)
+
+// validateMetaPaths rejects a snapshot whose path-bearing meta fields are not
+// the exact shape Apply expects. These fields arrive from a remote peer and are
+// joined into filesystem paths, so an unexpected value (a separator, "..", a
+// non-UUID) is treated as hostile and refused rather than sanitized.
+func validateMetaPaths(meta Meta) error {
+	if meta.IDBFileBase == "." || meta.IDBFileBase == ".." || !idbFileBaseRE.MatchString(meta.IDBFileBase) {
+		return fmt.Errorf("store: refusing snapshot with unsafe idb_file_base %q", meta.IDBFileBase)
+	}
+	if !originSuffixRE.MatchString(meta.OriginSuffix) {
+		return fmt.Errorf("store: refusing snapshot with unsafe origin_suffix %q", meta.OriginSuffix)
+	}
+	// SourceUUID is only consumed by synthMetadataV2, but it is embedded by
+	// string substitution, so it must be a real UUID even though it never names a
+	// path directly.
+	if meta.SourceUUID != "" && !uuidRE.MatchString(meta.SourceUUID) {
+		return fmt.Errorf("store: refusing snapshot with non-canonical source_uuid %q", meta.SourceUUID)
+	}
+	return nil
+}
+
 // rewriteDatabaseOrigin updates the single row of the IDB `database` table to
 // the target origin, opening the staged copy read-write.
 func rewriteDatabaseOrigin(sqlitePath, origin string) error {
@@ -158,7 +196,7 @@ func synthMetadataV2(snapshotDir, dst, srcUUID, dstUUID string) error {
 		return fmt.Errorf("store: UUID length mismatch (%d vs %d)", len(srcUUID), len(dstUUID))
 	}
 	data = bytes.ReplaceAll(data, []byte(srcUUID), []byte(dstUUID))
-	return os.WriteFile(dst, data, 0o600)
+	return os.WriteFile(dst, data, 0o600) //nolint:gosec // G703: dst is built from meta fields validated by validateMetaPaths
 }
 
 // profileLocked reports whether Firefox appears to have the profile open. On a
@@ -189,5 +227,5 @@ func copyFile(src, dst string, perm os.FileMode) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(dst, data, perm)
+	return os.WriteFile(dst, data, perm) //nolint:gosec // G703: staging paths derive from meta fields validated by validateMetaPaths
 }

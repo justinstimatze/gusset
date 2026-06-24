@@ -19,9 +19,8 @@
 // transport was exercised over loopback before mDNS existed. The production
 // Signaling impl (the companion extension writing to storage.sync) is browser-
 // side and is the next Tier-1 step; it becomes just another implementation of
-// this interface. NAT hole-punching (an ICE agent over the reflexive candidates)
-// is the other deferred Tier-1 step; see internal/stunc for the candidate the
-// beacon carries.
+// this interface. When no LAN endpoint reaches a peer, the beacon's ICE
+// endpoint drives a NAT hole-punch (internal/icewire).
 package rendezvous
 
 import (
@@ -60,7 +59,6 @@ type Beacon struct {
 	DeviceID      string       `json:"device_id"`     // stable per-device id; distinguishes your own machines (the shared passphrase identity cannot)
 	Instance      string       `json:"instance"`      // human label (hostname), for status display
 	LANEndpoints  []string     `json:"lan,omitempty"` // host:port candidates on the local network
-	SrvReflexive  string       `json:"srflx,omitempty"`
 	ICE           *ICEEndpoint `json:"ice,omitempty"` // ICE creds + candidates for NAT-hole-punch fallback (internal/icewire)
 	IssuedAt      int64        `json:"issued_at"`     // caller-supplied unix seconds; this package reads no clock
 }
