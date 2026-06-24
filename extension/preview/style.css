@@ -1,0 +1,36 @@
+@import "tailwindcss";
+@import "../assets/theme.css";
+@source "../entrypoints";
+@source "../components";
+@source "../lib";
+
+body {
+  background: light-dark(#e9e9ee, #131218);
+}
+.preview-label {
+  font: 600 11px system-ui;
+  letter-spacing: 0.04em;
+  color: var(--ink-dim);
+  margin: 16px 0 6px;
+}
+.wrap {
+  display: flex;
+  gap: 32px;
+  align-items: flex-start;
+  padding: 24px;
+  flex-wrap: wrap;
+}
+.popup-frame {
+  width: 340px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  overflow: hidden;
+  box-shadow: 0 6px 24px rgb(0 0 0 / 0.12);
+}
+.dash-frame {
+  flex: 1;
+  min-width: 540px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  overflow: hidden;
+}
