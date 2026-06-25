@@ -10,6 +10,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 	"sync/atomic"
 	"syscall"
@@ -52,6 +53,7 @@ func syncCmd(args []string) error {
 	listenAddr := fs.String("listen", "0.0.0.0:0", "address to listen on (host:port; :0 picks a free port)")
 	extCSV := fs.String("extensions", "", "comma-separated extension IDs to sync (the allowlist)")
 	overrideCSV := fs.String("override", "", "comma-separated sensitive extension IDs to force-enable")
+	force := fs.Bool("force", false, "take the peer's copy unconditionally, ignoring last-writer-wins (use when seeding a new machine to match an established one)")
 	restartFF := fs.Bool("restart-firefox", false, "close Firefox to apply, then relaunch it (destructive: closes your browser)")
 	ffBin := fs.String("firefox-bin", "", "Firefox binary to relaunch with --restart-firefox (default: platform Firefox)")
 	profileDir := fs.String("profile", "", "Firefox profile dir to sync (default: the active profile; or GUSSET_PROFILE)")
@@ -95,6 +97,12 @@ func syncCmd(args []string) error {
 		fmt.Println("cleared a stale Firefox lock (no running Firefox held the profile).")
 	}
 
+	// --force is a one-shot seed: under --watch it would re-clobber local with the
+	// peer's copy on every pass (and ping-pong if both sides force), so warn.
+	if *force && *watch {
+		fmt.Fprintln(os.Stderr, "note: --force with --watch re-takes the peer's copy every pass; --force is meant as a one-shot seed (use --for instead).")
+	}
+
 	// Opt-in: close Firefox up front so incoming settings apply cleanly, and
 	// relaunch it when the run ends. Only acts if Firefox is actually running.
 	if *restartFF {
@@ -124,6 +132,9 @@ func syncCmd(args []string) error {
 		fmt.Println("nothing to offer: no installed extension is allowlisted.")
 		fmt.Println("opt in with `gusset allow <id>` or --extensions <id>[,...] (see `gusset doctor` for IDs).")
 		fmt.Println("continuing to listen so a peer can still pull nothing — this is a no-op.")
+	} else {
+		sort.Strings(offerIDs)
+		fmt.Printf("offering %d extension(s): %s\n", len(offerIDs), strings.Join(offerIDs, ", "))
 	}
 
 	workDir, err := os.MkdirTemp("", "gusset-sync-")
@@ -216,7 +227,7 @@ func syncCmd(args []string) error {
 		})
 	}
 	target := store.NewFirefox(profDir)
-	pullDeps := pullContext{id: id, target: target, k: k, localCat: localCat, allow: allow, workDir: workDir, model: model, offer: offer, deviceName: &deviceNamePtr}
+	pullDeps := pullContext{id: id, target: target, k: k, localCat: localCat, allow: allow, workDir: workDir, model: model, force: *force, offer: offer, deviceName: &deviceNamePtr}
 
 	var outcomes []converge.Outcome
 	switch {
@@ -298,6 +309,7 @@ type pullContext struct {
 	allow    func(string) bool
 	workDir  string
 	model    *status.Model
+	force    bool // take the peer's copy unconditionally (seed/clone)
 
 	// Tier-1 hole-punch fallback (set only on the rendezvous path). offer is
 	// this device's chunk source, served back to the peer over the punched path;
@@ -429,7 +441,7 @@ func pullFrom(targets []dialTarget, peerID, peerName string, deps pullContext) (
 	deps.model.SetPeer(status.Peer{DeviceID: peerID, Name: peerName, State: status.Connected, Link: link, Since: now})
 	deps.model.Log(now, status.LogInfo, "connected to "+label+" over "+string(link))
 
-	outcomes, err := converge.Pull(client, deps.target, deps.k, deps.localCat, deps.allow, deps.workDir)
+	outcomes, err := converge.Pull(client, deps.target, deps.k, deps.localCat, deps.allow, deps.workDir, deps.force)
 	if err != nil {
 		deps.model.SetPeer(status.Peer{
 			DeviceID: peerID, Name: peerName, State: status.Unreachable,

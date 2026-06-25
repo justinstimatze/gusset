@@ -110,7 +110,7 @@ func iceReconcile(ctx context.Context, conn *icewire.Conn, peerID, label string,
 		return nil
 	}
 	client := transport.NewClient(stream)
-	outcomes, perr := converge.Pull(client, deps.target, deps.k, deps.localCat, deps.allow, deps.workDir)
+	outcomes, perr := converge.Pull(client, deps.target, deps.k, deps.localCat, deps.allow, deps.workDir, deps.force)
 	_ = client.Close() // FIN our pull stream so the peer's serve loop ends
 	wg.Wait()
 	if perr != nil {

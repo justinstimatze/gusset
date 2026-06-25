@@ -111,6 +111,8 @@ usage:
   gusset sync flags:
     --extensions a,b      extension IDs to sync (the opt-in allowlist)
     --override a,b        force-enable sensitive (denylisted) extension IDs
+    --force               take the peer's copy unconditionally, ignoring last-writer-wins
+                          (seed a new machine to match an established one; one-shot)
     --for 10m             stay reachable for a bounded window, then exit (default 30s)
     --watch               stay reachable indefinitely (until Ctrl-C)
     --peer host:port      dial a peer directly, skipping discovery

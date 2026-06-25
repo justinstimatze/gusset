@@ -83,7 +83,14 @@ type Outcome struct {
 // an error is returned only for a protocol-level failure (a bad/absent offer),
 // not for per-extension apply failures, which are reported as Failed outcomes so
 // one bad extension does not abort the rest.
-func Pull(client *transport.Client, target *store.Firefox, k *crypto.Keys, local Catalog, allow func(extID string) bool, workDir string) ([]Outcome, error) {
+//
+// force takes the peer's copy unconditionally, skipping the last-writer-wins
+// comparison. It is the seed/clone primitive: "this machine is new (or I want it
+// re-mirrored), make it match the peer." Use it when local state is not worth
+// preserving; it is the only thing that reliably overwrites a freshly-installed
+// extension's default storage, whose snapshot timestamp would otherwise look
+// newer than the peer's offer and block the apply.
+func Pull(client *transport.Client, target *store.Firefox, k *crypto.Keys, local Catalog, allow func(extID string) bool, workDir string, force bool) ([]Outcome, error) {
 	blob, err := client.Offer()
 	if err != nil {
 		return nil, fmt.Errorf("converge: fetch peer offer: %w", err)
@@ -100,8 +107,10 @@ func Pull(client *transport.Client, target *store.Firefox, k *crypto.Keys, local
 		switch {
 		case !allow(ext):
 			outcomes = append(outcomes, Outcome{ext, Blocked, "not allowlisted locally"})
-		case syncx.Newer(local[ext], pm) != pm:
+		case !force && syncx.Newer(local[ext], pm) != pm:
 			// Tie or ours newer -> Newer returns the local manifest, not pm.
+			// --force short-circuits this so a seed/clone takes the peer's copy
+			// even when our (snapshot-stamped) local looks newer.
 			outcomes = append(outcomes, Outcome{ext, LocalNewer, ""})
 		default:
 			if err := syncx.Import(target, pm, k, client.Get, workDir); err != nil {

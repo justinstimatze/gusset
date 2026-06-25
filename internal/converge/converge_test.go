@@ -95,7 +95,7 @@ func TestBuildOfferAndPull_AppliesPeerNewer(t *testing.T) {
 	allowAll := func(string) bool { return true }
 
 	// Target has no local catalog, so the peer is newer for uBO.
-	outcomes, err := Pull(client, target, k, Catalog{}, allowAll, t.TempDir())
+	outcomes, err := Pull(client, target, k, Catalog{}, allowAll, t.TempDir(), false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -178,7 +178,7 @@ func TestTwoPeer_RealTLSConverge(t *testing.T) {
 
 	targetDir := newTargetProfile(t, uBOID)
 	target := store.NewFirefox(targetDir)
-	outcomes, err := Pull(client, target, k, Catalog{}, func(string) bool { return true }, t.TempDir())
+	outcomes, err := Pull(client, target, k, Catalog{}, func(string) bool { return true }, t.TempDir(), false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -219,12 +219,36 @@ func TestPull_LocalNewerSkips(t *testing.T) {
 
 	target := store.NewFirefox(newTargetProfile(t, uBOID))
 	local := Catalog{uBOID: &chunk.Manifest{CreatedAt: 9_999}} // ours newer
-	outcomes, err := Pull(client, target, k, local, func(string) bool { return true }, t.TempDir())
+	outcomes, err := Pull(client, target, k, local, func(string) bool { return true }, t.TempDir(), false)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(outcomes) != 1 || outcomes[0].Action != LocalNewer {
 		t.Fatalf("expected local-newer, got %+v", outcomes)
+	}
+}
+
+// TestPull_ForceTakesPeerOverNewerLocal confirms the seed/clone primitive: with
+// force=true, Pull applies the peer's copy even when our local manifest is newer
+// (the exact case LWW skips). This is what lets a freshly-installed extension's
+// default storage be overwritten to match an established machine.
+func TestPull_ForceTakesPeerOverNewerLocal(t *testing.T) {
+	src := liveSource(t)
+	k, pol := keysAndPoly(t)
+	offer, _, err := BuildOffer(src, k, pol, []string{uBOID}, t.TempDir(), 1_000) // peer old
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := servePipe(t, offer)
+
+	target := store.NewFirefox(newTargetProfile(t, uBOID))
+	local := Catalog{uBOID: &chunk.Manifest{CreatedAt: 9_999}} // ours newer
+	outcomes, err := Pull(client, target, k, local, func(string) bool { return true }, t.TempDir(), true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(outcomes) != 1 || outcomes[0].Action != Applied {
+		t.Fatalf("expected force to apply the peer's copy, got %+v", outcomes)
 	}
 }
 
@@ -246,7 +270,7 @@ func TestPull_LockedWhenFirefoxRunning(t *testing.T) {
 		t.Fatal(err)
 	}
 	target := store.NewFirefox(targetDir)
-	outcomes, err := Pull(client, target, k, Catalog{}, func(string) bool { return true }, t.TempDir())
+	outcomes, err := Pull(client, target, k, Catalog{}, func(string) bool { return true }, t.TempDir(), false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -268,7 +292,7 @@ func TestPull_BlockedWhenNotAllowed(t *testing.T) {
 
 	target := store.NewFirefox(newTargetProfile(t, uBOID))
 	denyAll := func(string) bool { return false }
-	outcomes, err := Pull(client, target, k, Catalog{}, denyAll, t.TempDir())
+	outcomes, err := Pull(client, target, k, Catalog{}, denyAll, t.TempDir(), false)
 	if err != nil {
 		t.Fatal(err)
 	}
