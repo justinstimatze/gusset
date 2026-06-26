@@ -5,10 +5,16 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"regexp"
 
 	"github.com/justinstimatze/gusset/internal/config"
 	"github.com/justinstimatze/gusset/internal/crypto"
 )
+
+// uuidShape matches a Firefox per-install extension UUID (8-4-4-4-12 hex). It is
+// used only to recognize when the user pasted a UUID where a stable extension id
+// belongs — see resolveAllowIDs.
+var uuidShape = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
 
 // initCmd creates the config directory and an empty config. By default it
 // generates a per-user salt: the first device prints a one-line command to run
@@ -86,7 +92,10 @@ func initCmd(args []string) error {
 	return nil
 }
 
-// allowCmd adds extension IDs to the persisted allowlist.
+// allowCmd adds extension IDs to the persisted allowlist. It forgives the common
+// mistake of pasting a per-install UUID (the right column of `gusset doctor`)
+// where the stable extension id belongs (the left column) — gusset keys the
+// allowlist on the stable id, so an un-mapped UUID would silently match nothing.
 func allowCmd(args []string) error {
 	if len(args) == 0 {
 		return fmt.Errorf("usage: gusset allow <extension-id> [<extension-id>...]")
@@ -95,12 +104,43 @@ func allowCmd(args []string) error {
 	if err != nil {
 		return err
 	}
-	cfg.Allow(args...)
+	cfg.Allow(resolveAllowIDs(args)...)
 	if err := cfg.Save(); err != nil {
 		return err
 	}
 	fmt.Printf("allowlist now: %v\n", cfg.Allowlist)
 	return nil
+}
+
+// resolveAllowIDs maps any per-install UUID in args back to its stable extension
+// id, using the active profile's prefs.js. It is best-effort: if the profile
+// can't be read, or a value matches no installed UUID, the value is passed
+// through unchanged. A UUID that was successfully mapped is reported; a value
+// that merely looks like a UUID but mapped to nothing gets a warning, since it
+// will not match any extension.
+func resolveAllowIDs(args []string) []string {
+	var uuidToID map[string]string
+	if _, installed, perr := localProfile(profileOverride("")); perr == nil {
+		uuidToID = make(map[string]string, len(installed))
+		for id, uuid := range installed {
+			uuidToID[uuid] = id
+		}
+	}
+
+	resolved := make([]string, 0, len(args))
+	for _, a := range args {
+		switch id, mapped := uuidToID[a]; {
+		case mapped:
+			fmt.Printf("interpreted %s as %s (that was the per-install UUID; allowlisting the stable id)\n", a, id)
+			resolved = append(resolved, id)
+		case uuidShape.MatchString(a):
+			fmt.Fprintf(os.Stderr, "note: %q looks like a per-install UUID, not a stable extension id — gusset allowlists the stable id (the left column of `gusset doctor`). Allowing it as given; it will match nothing if it is a UUID.\n", a)
+			resolved = append(resolved, a)
+		default:
+			resolved = append(resolved, a)
+		}
+	}
+	return resolved
 }
 
 // disallowCmd removes extension IDs from the persisted allowlist.

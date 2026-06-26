@@ -172,8 +172,18 @@ func doctor() error {
 		ids = append(ids, id)
 	}
 	sort.Strings(ids)
+	if len(ids) > 0 {
+		// Label the columns: the left is the stable extension id `gusset allow`
+		// wants; the right is the per-install UUID (easy to grab by mistake).
+		fmt.Printf("  %-44s %s\n", "extension id (use with `gusset allow`)", "per-install UUID")
+	}
 	for _, id := range ids {
 		fmt.Printf("  %-44s %s\n", id, uuids[id])
+	}
+	if len(ids) > 0 {
+		// A ready-to-paste line so there is nothing to mis-copy — the stable id,
+		// not the UUID, is what gets opted in.
+		fmt.Printf("\nto sync one, opt it in with its extension id (the left column), e.g.:\n  gusset allow %s\n", ids[0])
 	}
 	return nil
 }
