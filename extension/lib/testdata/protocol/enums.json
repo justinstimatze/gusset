@@ -1,0 +1,37 @@
+{
+  "links": [
+    "lan",
+    "direct-nat"
+  ],
+  "log_levels": [
+    "info",
+    "ok",
+    "warn",
+    "error"
+  ],
+  "peer_states": [
+    "discovering",
+    "signaling",
+    "hole-punching",
+    "connected",
+    "unreachable"
+  ],
+  "reasons": [
+    "peer-offline",
+    "nat-traversal-failed",
+    "auth-failed"
+  ],
+  "server_msg_types": [
+    "status",
+    "beacon"
+  ],
+  "sync_states": [
+    "in-sync",
+    "pushing",
+    "pulling",
+    "stale",
+    "blocked",
+    "error",
+    "pending"
+  ]
+}

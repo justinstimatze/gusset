@@ -94,3 +94,36 @@ export const EMPTY_SNAPSHOT: Snapshot = {
   extensions: [],
   log: [],
 };
+
+// Runtime enumerations of the string unions above. The element types tie each
+// array to its union, so a typo or a value the union doesn't permit fails to
+// compile. protocol.contract.test.ts asserts these equal the Go source-of-truth
+// sets in internal/status (via the generated enums.json fixture), so an enum
+// added on one side and forgotten on the other fails a test. Keep them complete.
+export const PEER_STATES: readonly PeerState[] = [
+  "discovering",
+  "signaling",
+  "hole-punching",
+  "connected",
+  "unreachable",
+];
+export const LINKS: readonly Link[] = ["lan", "direct-nat"];
+export const REASONS: readonly Reason[] = [
+  "peer-offline",
+  "nat-traversal-failed",
+  "auth-failed",
+];
+export const SYNC_STATES: readonly SyncState[] = [
+  "in-sync",
+  "pushing",
+  "pulling",
+  "stale",
+  "blocked",
+  "error",
+  "pending",
+];
+export const LOG_LEVELS: readonly LogLevel[] = ["info", "ok", "warn", "error"];
+export const SERVER_MSG_TYPES: readonly ServerMsg["type"][] = [
+  "status",
+  "beacon",
+];

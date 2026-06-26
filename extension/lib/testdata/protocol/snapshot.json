@@ -1,0 +1,111 @@
+{
+  "self": {
+    "device_id": "rukh-2300de",
+    "name": "rukh"
+  },
+  "peers": [
+    {
+      "device_id": "peer-connected",
+      "name": "desktop",
+      "state": "connected",
+      "link": "direct-nat",
+      "since": 1750000003
+    },
+    {
+      "device_id": "peer-discovering",
+      "state": "discovering",
+      "since": 1750000000
+    },
+    {
+      "device_id": "peer-punching",
+      "state": "hole-punching",
+      "since": 1750000002
+    },
+    {
+      "device_id": "peer-signaling",
+      "name": "laptop",
+      "state": "signaling",
+      "since": 1750000001
+    },
+    {
+      "device_id": "peer-unreachable",
+      "state": "unreachable",
+      "reason": "nat-traversal-failed",
+      "detail": "punch timed out",
+      "since": 1750000004
+    }
+  ],
+  "extensions": [
+    {
+      "extension": "a@x",
+      "device_id": "peer-connected",
+      "state": "in-sync",
+      "since": 1750000000
+    },
+    {
+      "extension": "b@x",
+      "device_id": "peer-connected",
+      "state": "pushing",
+      "remaining": 3,
+      "total": 10,
+      "since": 1750000000
+    },
+    {
+      "extension": "c@x",
+      "device_id": "peer-connected",
+      "state": "pulling",
+      "remaining": 7,
+      "total": 10,
+      "since": 1750000000
+    },
+    {
+      "extension": "d@x",
+      "device_id": "peer-connected",
+      "state": "stale",
+      "since": 1750000000
+    },
+    {
+      "extension": "e@x",
+      "device_id": "peer-connected",
+      "state": "blocked",
+      "detail": "not allowlisted here",
+      "since": 1750000000
+    },
+    {
+      "extension": "f@x",
+      "device_id": "peer-connected",
+      "state": "error",
+      "detail": "verify failed",
+      "since": 1750000000
+    },
+    {
+      "extension": "g@x",
+      "device_id": "peer-connected",
+      "state": "pending",
+      "detail": "restart Firefox to load",
+      "since": 1750000000
+    }
+  ],
+  "log": [
+    {
+      "time": 1750000003,
+      "level": "error",
+      "message": "couldn't sync f@x from desktop"
+    },
+    {
+      "time": 1750000002,
+      "level": "warn",
+      "message": "fetched g@x — close Firefox to apply"
+    },
+    {
+      "time": 1750000001,
+      "level": "ok",
+      "message": "applied a@x from desktop"
+    },
+    {
+      "time": 1750000000,
+      "level": "info",
+      "message": "dialing peer-connected"
+    }
+  ]
+}
