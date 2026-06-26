@@ -45,6 +45,7 @@ func syncCmd(args []string) error {
 	fs := flag.NewFlagSet("sync", flag.ContinueOnError)
 	forDur := fs.Duration("for", 30*time.Second, "stay reachable for this long, then exit")
 	watch := fs.Bool("watch", false, "stay reachable indefinitely (until Ctrl-C)")
+	once := fs.Bool("once", false, "exit as soon as the local pull finishes, skipping the reachable-back window (ideal for a one-way --force seed)")
 	peerAddr := fs.String("peer", "", "dial this host:port directly, skipping mDNS discovery")
 	rzDir := fs.String("rendezvous-dir", "", "exchange sealed beacons through this shared folder to reach peers off the LAN (Tier 1)")
 	deviceID := fs.String("device-id", "", "override this device's stable unique id (default: persisted, generated from hostname)")
@@ -102,6 +103,9 @@ func syncCmd(args []string) error {
 	if *force && *watch {
 		fmt.Fprintln(os.Stderr, "note: --force with --watch re-takes the peer's copy every pass; --force is meant as a one-shot seed (use --for instead).")
 	}
+	if *once && *watch {
+		fmt.Fprintln(os.Stderr, "note: --once is ignored with --watch (--watch stays reachable until Ctrl-C).")
+	}
 
 	// Opt-in: close Firefox up front so incoming settings apply cleanly, and
 	// relaunch it when the run ends. Only acts if Firefox is actually running.
@@ -153,6 +157,11 @@ func syncCmd(args []string) error {
 		return err
 	}
 	model := status.New()
+	// Stream progress to the terminal as it happens. Without this the model is
+	// only surfaced live over --ws (for the companion extension); a bare CLI run
+	// would otherwise show nothing until the end-of-run grid — which, with --for,
+	// is after the whole reachable window elapses.
+	model.SetEcho(os.Stderr)
 	srv, err := transport.Listen("tcp", *listenAddr, id, offer,
 		transport.WithConnErrorHandler(func(ce transport.ConnError) {
 			if ce.Phase == transport.PhaseHandshake {
@@ -236,7 +245,7 @@ func syncCmd(args []string) error {
 			fmt.Fprintln(os.Stderr, "note: --peer is set, so --rendezvous-dir is ignored (dialing the peer directly).")
 		}
 		outcomes, _ = pullFrom([]dialTarget{{addr: *peerAddr, link: status.LinkLAN}}, *peerAddr, "", pullDeps)
-		<-ctx.Done() // linger so the peer can pull from us within the window
+		reachableBackWait(ctx, *watch, *once, *forDur, outcomes)
 	default:
 		// The cross-network beacon carrier is a shared folder (--rendezvous-dir)
 		// or, when the companion extension is connected over the WS, the
@@ -428,6 +437,7 @@ func pullFrom(targets []dialTarget, peerID, peerName string, deps pullContext) (
 	if label == "" {
 		label = peerID
 	}
+	deps.model.Log(now, status.LogInfo, "dialing "+label)
 	client, link, err := dialFirst(targets, deps.id)
 	if err != nil {
 		deps.model.SetPeer(status.Peer{
@@ -538,6 +548,44 @@ func setupRendezvous(ctx context.Context, carrier rendezvous.Signaling, label, d
 	}
 	fmt.Printf("rendezvous: published beacon %q with %d candidate endpoint(s)%s via %s\n", devID, cands, punch, label)
 	return src, beacon, sess
+}
+
+// reachableBackWait decides whether a one-shot --peer run lingers after its pull.
+// The pull is already done; the only reason to stay reachable is so the peer can
+// pull *our* newer data back. So: --watch stays until Ctrl-C; --once exits now;
+// otherwise we linger up to --for only when we actually hold something the peer
+// would want, and exit immediately when everything is already in sync — the
+// common seed case, where we took the peer's copy and hold nothing newer.
+//
+// It does not yet cut the linger short the moment the peer finishes pulling
+// (that needs the listener to signal a completed served pull); --for remains the
+// upper bound for the hold-newer-data case.
+func reachableBackWait(ctx context.Context, watch, once bool, forDur time.Duration, outcomes []converge.Outcome) {
+	switch {
+	case watch:
+		fmt.Fprintln(os.Stderr, "→ pull done — staying reachable until Ctrl-C so the peer can sync back.")
+		<-ctx.Done()
+	case once:
+		fmt.Fprintln(os.Stderr, "✓ pull done — exiting now (--once).")
+	case holdsUpdatesToOffer(outcomes):
+		fmt.Fprintf(os.Stderr, "→ pull done — you hold newer data; staying reachable %s so the peer can pull it back (Ctrl-C to quit now).\n", forDur)
+		<-ctx.Done()
+	default:
+		fmt.Fprintln(os.Stderr, "✓ everything in sync — nothing for the peer to pull back; exiting.")
+	}
+}
+
+// holdsUpdatesToOffer reports whether our reconcile left us holding a copy newer
+// than the peer's for some extension — the only case where staying reachable
+// benefits the peer (it can pull our copy). A LocalNewer outcome means exactly
+// that, modulo an exact same-timestamp tie, where a brief linger is harmless.
+func holdsUpdatesToOffer(outcomes []converge.Outcome) bool {
+	for _, o := range outcomes {
+		if o.Action == converge.LocalNewer {
+			return true
+		}
+	}
+	return false
 }
 
 // lifetimeContext builds the run's deadline: indefinite under --watch (until a

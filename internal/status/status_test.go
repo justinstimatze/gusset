@@ -159,6 +159,36 @@ func TestRender_SanitizesPeerSuppliedStrings(t *testing.T) {
 	}
 }
 
+func TestModel_EchoStreamsLogLinesLive(t *testing.T) {
+	// SetEcho makes each Log line stream as it is appended, so a bare CLI run
+	// shows progress instead of only the end-of-run grid. The echoed line carries
+	// the level glyph and the message, and — because a message can embed a
+	// peer-supplied label — is sanitized exactly as Render is.
+	var buf bytes.Buffer
+	m := New()
+	m.SetEcho(&buf)
+	m.Log(1_750_000_000, LogOK, "applied uBlock0 from evil\x1b[2Jpeer")
+
+	out := buf.String()
+	if !strings.HasPrefix(out, "✓ ") {
+		t.Errorf("expected the LogOK glyph prefix, got %q", out)
+	}
+	if !strings.Contains(out, "applied uBlock0 from evil") {
+		t.Errorf("expected the message to survive, got %q", out)
+	}
+	if strings.ContainsRune(out, '\x1b') {
+		t.Errorf("echo leaked a control byte into the terminal: %q", out)
+	}
+
+	// A nil echo (the default) must not panic and must write nothing extra.
+	m.SetEcho(nil)
+	buf.Reset()
+	m.Log(1_750_000_001, LogInfo, "dialing 192.168.4.26:9001")
+	if buf.Len() != 0 {
+		t.Errorf("disabled echo still wrote %q", buf.String())
+	}
+}
+
 func TestSnapshot_JSONShape(t *testing.T) {
 	m := New()
 	m.SetPeer(Peer{DeviceID: "a", State: Connected, Link: LinkLAN, Since: 1})

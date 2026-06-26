@@ -13,6 +13,8 @@
 package status
 
 import (
+	"fmt"
+	"io"
 	"sort"
 	"sync"
 )
@@ -138,6 +140,7 @@ type Model struct {
 	exts  map[string]ExtSync
 	log   []LogEntry
 	subs  map[chan struct{}]struct{}
+	echo  io.Writer
 }
 
 // SetSelf records the local device's identity.
@@ -163,12 +166,44 @@ func New() *Model {
 // ring is bounded by maxLog.
 func (m *Model) Log(now int64, level LogLevel, message string) {
 	m.mu.Lock()
-	defer m.mu.Unlock()
 	m.log = append(m.log, LogEntry{Time: now, Level: level, Message: message})
 	if len(m.log) > maxLog {
 		m.log = m.log[len(m.log)-maxLog:]
 	}
 	m.notify()
+	echo := m.echo
+	m.mu.Unlock()
+	// Stream the line live (outside the lock — blocking terminal I/O must not
+	// stall other writers). The message can embed peer-supplied labels, so it is
+	// sanitized exactly as Render does before reaching the terminal.
+	if echo != nil {
+		fmt.Fprintf(echo, "%s %s\n", logGlyph(level), sanitize(message))
+	}
+}
+
+// SetEcho streams each new activity-log line to w as it is appended, so a bare
+// CLI run shows progress as it happens instead of only in the end-of-run grid.
+// Pass nil to disable. The localhost-WS surface is unaffected; it still observes
+// the same model via Subscribe.
+func (m *Model) SetEcho(w io.Writer) {
+	m.mu.Lock()
+	m.echo = w
+	m.mu.Unlock()
+}
+
+// logGlyph is the one-rune prefix the live echo prints per level, mirroring the
+// vocabulary the end-of-run grid and apply banner already use.
+func logGlyph(level LogLevel) string {
+	switch level {
+	case LogOK:
+		return "✓"
+	case LogWarn:
+		return "⚠"
+	case LogError:
+		return "✗"
+	default: // LogInfo and any future level
+		return "→"
+	}
 }
 
 // Subscribe registers for change notifications. It returns a channel that

@@ -114,6 +114,8 @@ usage:
     --force               take the peer's copy unconditionally, ignoring last-writer-wins
                           (seed a new machine to match an established one; one-shot)
     --for 10m             stay reachable for a bounded window, then exit (default 30s)
+    --once                exit as soon as the local pull finishes, skipping the
+                          reachable-back window (ideal for a one-way --force seed)
     --watch               stay reachable indefinitely (until Ctrl-C)
     --peer host:port      dial a peer directly, skipping discovery
     --listen host:port    bind a specific listen address (default :0, an OS-picked port)
