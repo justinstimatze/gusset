@@ -82,7 +82,8 @@
       "!**/node_modules",
       "!.output",
       "!.wxt",
-      "!**/*.tsbuildinfo"
+      "!**/*.tsbuildinfo",
+      "!lib/testdata/**"
     ]
   }
 }
