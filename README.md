@@ -43,6 +43,21 @@ dashboard with the per-extension × per-device sync grid (the daemon serves it
 over `gusset sync --ws`). Still to come: a relay for the symmetric-NAT pairs
 hole-punching can't cross. See [docs/design.md](docs/design.md) for the design.
 
+## Install
+
+```sh
+# Linux / macOS
+curl -fsSL https://raw.githubusercontent.com/justinstimatze/gusset/main/install.sh | sh
+
+# Windows (PowerShell)
+irm https://raw.githubusercontent.com/justinstimatze/gusset/main/install.ps1 | iex
+```
+
+Each downloads the latest release for your OS/arch, verifies its SHA-256 (and,
+with the GitHub CLI installed, its SLSA build-provenance attestation), and
+installs the `gusset` binary. Until the first release is tagged, build from
+source instead — the installer says so and points you here.
+
 ## Build
 
 ```sh

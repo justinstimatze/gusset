@@ -9,6 +9,7 @@ builds:
     goos:
       - linux
       - darwin
+      - windows
     goarch:
       - amd64
       - arm64
@@ -24,6 +25,11 @@ builds:
 archives:
   - id: default
     formats: ['tar.gz']
+    # Windows gets a .zip (friendlier than tar.gz there); install.ps1 downloads
+    # exactly this name. install.sh downloads the tar.gz for linux/darwin.
+    format_overrides:
+      - goos: windows
+        formats: ['zip']
     name_template: "gusset_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
 
 checksum:

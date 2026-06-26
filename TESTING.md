@@ -11,13 +11,35 @@ tested" to "experimental," so start at the top.
 > real data, so copy your Firefox profile folder somewhere safe before you start.
 > Find it with `gusset doctor`. Apply detects a running Firefox two ways (the
 > profile `lock` symlink and an fcntl lock on `.parentlock`), which covers both
-> Linux and macOS — but macOS isn't verified against a live Mac yet, so close
-> Firefox yourself there to be safe.
+> Linux, macOS, and Windows. The guard is verified against a live browser on
+> Linux; on macOS and Windows the *refuse-while-running* path hasn't been
+> exercised yet (the Windows dogfood applied with Firefox closed), so close
+> Firefox yourself on those two to be safe.
+
+## Install
+
+**Linux / macOS:**
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/justinstimatze/gusset/main/install.sh | sh
+```
+
+**Windows (PowerShell):**
+
+```powershell
+irm https://raw.githubusercontent.com/justinstimatze/gusset/main/install.ps1 | iex
+```
+
+Each downloads the latest release for your OS/arch, verifies its SHA-256 against
+the release `checksums.txt` (and, if you have the GitHub CLI, its SLSA
+build-provenance attestation), and installs the `gusset` binary. *No release is
+tagged yet* — until the first one lands the installer prints a note and you build
+from source (below); it starts working the moment a release is published.
 
 ## What you need
 
-- Two machines (Linux or macOS), **on the same WiFi** for the simplest path.
-- Go 1.26+ to build (a prebuilt binary comes later), or `make build`.
+- Two machines (Linux, macOS, or Windows), **on the same WiFi** for the simplest path.
+- Either the installer above, or Go 1.26+ to build from source (`make build`).
 - The **same passphrase on both machines** — this is the only shared secret.
   Generate a strong one with `./gusset gen-passphrase` and copy the *same* output
   to both machines. gusset derives all keys from it; there is no account and no
