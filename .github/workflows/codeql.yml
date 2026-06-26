@@ -18,6 +18,9 @@ jobs:
       contents: read # a job-level permissions block replaces the top-level one,
                      # so checkout needs contents re-granted here or it 404s on a
                      # private repo ("Repository not found").
+      actions: read  # required on PRIVATE repos: the upload step queries the
+                     # workflow-run API; without it the SARIF upload fails with
+                     # "Resource not accessible by integration". Harmless public.
       security-events: write # upload results to the Security tab
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
