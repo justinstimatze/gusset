@@ -272,16 +272,23 @@ source knowledge and cross-compiles clean (`GOOS=darwin go build ./...`), but ha
   `--profile`/`--new-instance`, unlike `open -a Firefox`). Overridable with
   `--firefox-bin` for non-standard install locations.
 
-## Windows — UNVERIFIED (no Windows Firefox checked yet; cross-compiles clean)
+## Windows — VERIFIED end-to-end (one safety nuance still open)
 
-The Windows support in `internal/profile`, `internal/ffctl`, and
-`internal/store` cross-compiles (`GOOS=windows go build ./...`) and the
-data-safety probe has a CI test (`parentlock_windows_test.go`), but none of it
-has been run against a live Windows Firefox. What is and isn't certain:
+As of 2026-06-26 the Windows happy path is dogfood-verified: a real
+Linux→Windows sync resolved the live Windows profile, re-homed an extension's
+`storage.local` onto its per-install UUID, applied it (Firefox closed), and the
+settings rendered in uBlock Origin's own UI after restart. The Windows support
+in `internal/profile`, `internal/ffctl`, and `internal/store` also cross-compiles
+(`GOOS=windows go build ./...`) and the data-safety probe has a CI test
+(`parentlock_windows_test.go`). The apply ran with Firefox closed, so the one
+thing still **not** exercised against a live browser is the guard *refusing*
+while Firefox is running — see the profile-lock bullet. What is and isn't
+certain:
 
 - **Profile root** — `%APPDATA%\Mozilla\Firefox` (i.e. `…\AppData\Roaming\…`) is
   the documented Windows location and is the windows branch in
-  `profile.firefoxRootCandidates`. Confidence: high. `profiles.ini` and the IDB
+  `profile.firefoxRootCandidates`. **Confirmed:** the live Linux→Windows sync
+  resolved the real Windows profile and wrote its IDB. `profiles.ini` and the IDB
   layout downstream are cross-platform Gecko internals.
 - **Process identity** (`ffctl.processStrings`) — no `/proc`; the windows build
   shells out to `tasklist /FI "PID eq <pid>"`, which yields the image name
