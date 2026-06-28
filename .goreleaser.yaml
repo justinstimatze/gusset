@@ -1,0 +1,59 @@
+version: 2
+
+builds:
+  - id: gusset
+    main: ./cmd/gusset
+    binary: gusset
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    flags:
+      - -trimpath
+    # Stamp the version from the git tag (matches the Makefile's -X main.version),
+    # so `gusset version` on a release binary reports the tag, not "dev". Without
+    # this explicit flag the overridden ldflags drop goreleaser's default
+    # main.version injection.
+    ldflags:
+      - -s -w -X main.version={{ .Tag }}
+
+archives:
+  - id: default
+    formats: ['tar.gz']
+    # Windows gets a .zip (friendlier than tar.gz there); install.ps1 downloads
+    # exactly this name. install.sh downloads the tar.gz for linux/darwin.
+    format_overrides:
+      - goos: windows
+        formats: ['zip']
+    name_template: "gusset_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+
+checksum:
+  name_template: 'checksums.txt'
+
+changelog:
+  use: github
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+      - '^ci:'
+
+release:
+  github:
+    owner: justinstimatze
+    name: gusset
+  draft: false
+  prerelease: auto
+  # Attach the prebuilt companion extension (built by the release workflow before
+  # goreleaser runs) so friends can download it from the release page without a
+  # local toolchain. The signed .xpi (when AMO credentials are configured)
+  # installs permanently from Firefox with one click; the .zip is the fallback
+  # for about:debugging / development.
+  extra_files:
+    - glob: extension/.output/*.xpi
+    - glob: extension/.output/*-firefox.zip

@@ -1,0 +1,9 @@
+@import "tailwindcss";
+@import "../../assets/theme.css";
+@source "../../components";
+@source "../../lib";
+
+/* Firefox sizes a popup to the body's width — set it here, not on :root. */
+body {
+  width: 340px;
+}

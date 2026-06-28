@@ -1,0 +1,48 @@
+name: Dependabot auto-merge
+
+# Auto-merges Dependabot PRs once the full CI workflow has concluded
+# successfully. Using workflow_run (rather than a pull_request trigger plus
+# `gh pr merge --auto`) gates the merge on green CI *without* requiring branch
+# protection on main: direct pushes to main keep working unchanged, and a
+# dependency bump that breaks the build, tests, govulncheck, or the extension
+# build never merges because its CI run is red and this workflow never fires.
+#
+# Note: this gates on CI only, not CodeQL. CI already runs govulncheck, and
+# Dependabot bumps are themselves security-motivated. Tighten later by adding
+# branch protection that requires both checks if you want CodeQL to block too.
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  auto-merge:
+    runs-on: ubuntu-latest
+    # Only when CI passed, on a pull_request run, opened by Dependabot. The
+    # workflow_run token is the repo's own (write-capable) token, unlike the
+    # read-only token a Dependabot-triggered pull_request workflow receives.
+    if: >
+      github.event.workflow_run.event == 'pull_request' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.actor.login == 'dependabot[bot]'
+    steps:
+      - name: Merge the Dependabot PR for this CI run
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          BRANCH: ${{ github.event.workflow_run.head_branch }}
+        run: |
+          num=$(gh pr list --repo "$REPO" --head "$BRANCH" --state open \
+            --json number --jq '.[0].number // empty')
+          if [ -z "$num" ]; then
+            echo "No open PR for branch $BRANCH; nothing to merge."
+            exit 0
+          fi
+          echo "CI is green for PR #$num ($BRANCH); enabling squash auto-merge."
+          # --auto degrades to an immediate merge when nothing else is pending,
+          # and correctly waits if branch protection is added later.
+          gh pr merge "$num" --repo "$REPO" --squash --auto --delete-branch

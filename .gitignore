@@ -1,0 +1,26 @@
+# binaries
+/gusset
+/dist/
+
+# test artifacts
+*.test
+*.out
+*.prof
+coverage.*
+
+# OS
+.DS_Store
+
+# Local secrets
+.env
+.env.local
+*.key
+
+# Per-project Claude Code state
+/.claude/
+
+# calque drift-gate local state. The adjudicated registry (.calque/registry.md)
+# is meant to be tracked once it exists; the fire telemetry and calibration
+# weights are local-only and grow per run.
+/.calque/fires.jsonl
+/.calque/weights.json

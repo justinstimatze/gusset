@@ -1,0 +1,80 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # create the release and upload archives
+      id-token: write # OIDC token for build-provenance attestation
+      attestations: write # record the SLSA provenance attestation
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: go.mod
+
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version-file: extension/.nvmrc
+
+      - name: Build companion extension zip
+        working-directory: extension
+        run: |
+          npm ci
+          npm run zip:firefox
+
+      # Sign the extension for self-distribution (unlisted channel) so users can
+      # click the .xpi in Firefox and install it permanently — no about:debugging,
+      # no toolchain. Requires AMO API credentials as repo secrets; when they are
+      # absent (e.g. a fork), this step no-ops and the release ships the unsigned
+      # zip only. Generate a key at addons.mozilla.org → Developer Hub → API keys.
+      - name: Sign the extension (.xpi) via AMO
+        working-directory: extension
+        env:
+          AMO_JWT_ISSUER: ${{ secrets.AMO_JWT_ISSUER }}
+          AMO_JWT_SECRET: ${{ secrets.AMO_JWT_SECRET }}
+        run: |
+          if [ -z "$AMO_JWT_ISSUER" ] || [ -z "$AMO_JWT_SECRET" ]; then
+            echo "AMO_JWT_ISSUER/AMO_JWT_SECRET not set — skipping signing; the release ships the unsigned zip only."
+            exit 0
+          fi
+          npm run build:firefox
+          npx --yes web-ext@8 sign \
+            --source-dir .output/firefox-mv3 \
+            --channel unlisted \
+            --api-key "$AMO_JWT_ISSUER" \
+            --api-secret "$AMO_JWT_SECRET" \
+            --artifacts-dir .output \
+            --no-input
+          # Publish a stable-named copy alongside the versioned one, so a permanent
+          # install link works: releases/latest/download/gusset.xpi
+          signed="$(ls -t .output/*.xpi | head -1)"
+          cp "$signed" .output/gusset.xpi
+
+      - name: Release
+        uses: goreleaser/goreleaser-action@5daf1e915a5f0af01ddbcd89a43b8061ff4f1a89 # v7.2.2
+        with:
+          version: '~> v2'
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2
+        with:
+          subject-path: |
+            dist/*.tar.gz
+            dist/*.zip
+            dist/checksums.txt
+            extension/.output/*.xpi

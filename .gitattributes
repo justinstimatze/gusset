@@ -1,0 +1,12 @@
+# Normalize line endings to LF in the repo and on checkout — on every OS,
+# including Windows. Without this, GitHub's windows runner checks out text files
+# with CRLF (core.autocrlf), and `gofmt -l` then flags every .go file as
+# unformatted, failing CI. Forcing LF keeps Windows checkouts byte-identical to
+# Linux/macOS.
+* text=auto eol=lf
+
+# Belt and suspenders: never normalize known-binary assets.
+*.png binary
+*.zip binary
+*.gif binary
+*.ico binary

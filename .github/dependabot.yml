@@ -1,0 +1,30 @@
+version: 2
+updates:
+  # Go modules for the main module. Grouped so a week's bumps arrive as one PR
+  # the auto-merge workflow can land in a single green CI pass.
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      go-deps:
+        patterns: ["*"]
+
+  # The companion extension's npm deps. This ecosystem was previously unwatched,
+  # so transitive advisories (shell-quote, tmp, uuid, esbuild) only surfaced as
+  # security alerts; now version updates are tracked too.
+  - package-ecosystem: npm
+    directory: /extension
+    schedule:
+      interval: weekly
+    groups:
+      npm-deps:
+        patterns: ["*"]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]
