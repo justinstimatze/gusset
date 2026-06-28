@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v0.1.2
 
 - Privacy: the device id broadcast over mDNS (and used as the shared-folder
   beacon filename) is now an opaque random label instead of being derived from
