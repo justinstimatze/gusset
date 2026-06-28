@@ -233,7 +233,7 @@ func copyExternalFiles(srcDir, destDir string, ids []int) error {
 		if err != nil {
 			return fmt.Errorf("reading external value %d: %w", id, err)
 		}
-		if err := os.WriteFile(filepath.Join(destDir, name), data, 0o644); err != nil { //nolint:gosec // G703: destDir is gusset's own freshly-created snapshot directory; name is a numeric id
+		if err := os.WriteFile(filepath.Join(destDir, name), data, 0o600); err != nil { //nolint:gosec // G703: destDir is gusset's own freshly-created snapshot directory; name is a numeric id
 			return fmt.Errorf("writing external value %d: %w", id, err)
 		}
 	}
@@ -245,5 +245,5 @@ func writeMeta(dir string, m Meta) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(dir, "meta.json"), append(data, '\n'), 0o644)
+	return os.WriteFile(filepath.Join(dir, "meta.json"), append(data, '\n'), 0o600)
 }

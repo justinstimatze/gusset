@@ -84,7 +84,14 @@ func setupCmd(args []string) error {
 	fmt.Printf("%s[ ] 6. first sync (both machines on the same WiFi)\n", next(false))
 	fmt.Println("        established machine: gusset sync --for 2m")
 	fmt.Println("        new machine:         gusset sync --force --once   (seeds it from the other)")
-	fmt.Println("        off the same network? add --rendezvous-dir <a folder both already sync>")
+	fmt.Println()
+	fmt.Println("     not on the same network? reach across one of two ways — your choice:")
+	fmt.Println("        • a shared folder, no third party: add")
+	fmt.Println("            --rendezvous-dir <a folder both already sync, e.g. ~/Dropbox/gusset>")
+	fmt.Println("          only sealed ciphertext is written there; the folder learns nothing")
+	fmt.Println("        • a direct hole-punch: add")
+	fmt.Println("            --stun <server:port>   (e.g. stun.l.google.com:19302)")
+	fmt.Println("          faster, but it contacts that STUN server, which learns your public IP")
 	fmt.Println()
 
 	switch {

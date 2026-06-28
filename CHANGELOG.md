@@ -1,5 +1,22 @@
 # Changelog
 
+## Unreleased
+
+- Privacy: the device id broadcast over mDNS (and used as the shared-folder
+  beacon filename) is now an opaque random label instead of being derived from
+  the hostname, so a device no longer leaks your machine's name to others on the
+  same network — or to anyone with access to a rendezvous folder. The friendly
+  hostname stays in the UI and only ever travels inside a sealed beacon. (Existing
+  configs keep their id; delete `device_id` from the config and re-run to adopt an
+  opaque one.)
+- A **Privacy** section in the README and SECURITY.md spells out exactly what is
+  and isn't exposed — sealed carriers, no telemetry, the mDNS presence signal, the
+  `storage.sync` device-count metadata, and STUN's opt-in public-IP reveal — and
+  `gusset setup` now presents the two cross-network options, a shared folder (no
+  third party) vs `--stun` (contacts a STUN server), with that tradeoff stated.
+- Snapshot/apply temp files are written `0600` (were `0644`), matching the rest of
+  the on-disk surface (they already lived in a `0700` dir).
+
 ## v0.1.1
 
 - First release carrying a SLSA build-provenance attestation: the repository is

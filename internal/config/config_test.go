@@ -22,8 +22,18 @@ func TestEnsureIdentity(t *testing.T) {
 	if c.DeviceName != "My-Host" {
 		t.Fatalf("DeviceName = %q, want the hostname", c.DeviceName)
 	}
-	if !strings.HasPrefix(c.DeviceID, "My-Host-") || len(c.DeviceID) != len("My-Host-")+6 {
-		t.Fatalf("DeviceID = %q, want hostname + '-' + 6 hex", c.DeviceID)
+	// The id is OPAQUE: 12 hex chars, and crucially it must NOT contain the
+	// hostname (it is broadcast in cleartext over mDNS / used as a beacon filename).
+	if len(c.DeviceID) != 12 {
+		t.Fatalf("DeviceID = %q, want 12 hex chars", c.DeviceID)
+	}
+	if strings.Contains(strings.ToLower(c.DeviceID), "host") {
+		t.Fatalf("DeviceID = %q must not embed the hostname", c.DeviceID)
+	}
+	for _, r := range c.DeviceID {
+		if !((r >= '0' && r <= '9') || (r >= 'a' && r <= 'f')) {
+			t.Fatalf("DeviceID = %q, want lowercase hex only", c.DeviceID)
+		}
 	}
 
 	// Idempotent: a second call changes nothing and keeps the same identity.

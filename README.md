@@ -160,6 +160,27 @@ relay for the symmetric-NAT pairs hole-punching cannot cross. See
 internals verified against a real profile, and [TESTING.md](TESTING.md) for a
 staged, most-proven-path-first quickstart.
 
+## Privacy
+
+gusset needs no account and no server, and keeps your settings — and who syncs
+with whom — out of any third party's hands. Carriers (a shared folder, or Firefox
+Sync) only ever see sealed ciphertext; the settings move device-to-device. There
+is no telemetry, and the passphrase is never logged or sent.
+
+Two things worth knowing honestly:
+
+- On a local network, gusset announces itself over mDNS so your devices can find
+  each other — a LAN observer can see that *a* gusset device is present, by an
+  **opaque random id, not your hostname**. Through Firefox Sync, your own account
+  can see that gusset is installed and how many devices you have; the beacon
+  values stay encrypted (Mozilla cannot read them).
+- `--stun` is opt-in. Enabling it lets the STUN server you name learn your public
+  IP; to sync across networks with **no** third party, use a shared folder
+  (`--rendezvous-dir`) instead — only sealed ciphertext goes there.
+
+Full detail in [SECURITY.md](SECURITY.md) and
+[docs/transport-and-security.md](docs/transport-and-security.md).
+
 ## Build from source
 
 You do not need this — the installer pulls a prebuilt binary. This is for

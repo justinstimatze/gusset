@@ -37,11 +37,12 @@ type Config struct {
 	// PassphraseFile is the path to a 0600 file holding the passphrase. Empty
 	// means fall back to the default location or the environment.
 	PassphraseFile string `json:"passphrase_file,omitempty"`
-	// DeviceID is this device's stable, unique id within a pairing — the hostname
-	// plus a short random suffix, generated once and persisted. It is the map key
-	// and tie-break for peers, so it MUST be unique: two machines that share a
-	// hostname would otherwise collide in mDNS self-detection, the status map, and
-	// the ICE controlling tie-break, and fail to sync with each other.
+	// DeviceID is this device's stable, unique id within a pairing — an opaque
+	// random label, generated once and persisted. It is the map key and tie-break
+	// for peers, so it MUST be unique. It is deliberately NOT hostname-derived:
+	// the id is broadcast in cleartext over mDNS and used as a shared-folder beacon
+	// filename, so a hostname here would leak to any LAN/folder observer. The
+	// hostname lives in DeviceName, which only travels sealed or stays local.
 	DeviceID string `json:"device_id,omitempty"`
 	// DeviceName is the friendly label shown in the UI, defaulting to the
 	// hostname. Renaming it does not change DeviceID.
@@ -58,11 +59,11 @@ func (c *Config) EnsureIdentity(hostname string) (bool, error) {
 	}
 	changed := false
 	if c.DeviceID == "" {
-		suffix, err := randomSuffix()
+		id, err := randomID()
 		if err != nil {
 			return false, err
 		}
-		c.DeviceID = sanitizeLabel(hostname) + "-" + suffix
+		c.DeviceID = id
 		changed = true
 	}
 	if c.DeviceName == "" {
@@ -72,31 +73,20 @@ func (c *Config) EnsureIdentity(hostname string) (bool, error) {
 	return changed, nil
 }
 
-// randomSuffix returns 3 random bytes as 6 hex chars.
-func randomSuffix() (string, error) {
-	var b [3]byte
+// randomID returns an opaque device id: 6 random bytes as 12 hex chars. It is
+// deliberately NOT derived from the hostname — the id is broadcast in cleartext
+// over mDNS (the service instance label) and is used as the beacon filename on a
+// shared-folder carrier, so embedding the hostname would leak it to anyone on the
+// LAN or with access to that folder. The human-friendly hostname lives in
+// DeviceName instead, which only ever travels inside a sealed beacon or stays in
+// the local UI. 6 bytes is ample to keep two devices from colliding in the status
+// map and the ICE tie-break.
+func randomID() (string, error) {
+	var b [6]byte
 	if _, err := rand.Read(b[:]); err != nil {
 		return "", err
 	}
 	return hex.EncodeToString(b[:]), nil
-}
-
-// sanitizeLabel keeps only characters safe as an mDNS instance / id prefix.
-func sanitizeLabel(s string) string {
-	out := make([]rune, 0, len(s))
-	for _, r := range s {
-		switch {
-		case r == '-' || r == '_',
-			r >= 'a' && r <= 'z',
-			r >= 'A' && r <= 'Z',
-			r >= '0' && r <= '9':
-			out = append(out, r)
-		}
-	}
-	if len(out) == 0 {
-		return "device"
-	}
-	return string(out)
 }
 
 // Dir returns the config directory: GUSSET_CONFIG_DIR if set, else
