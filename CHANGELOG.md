@@ -1,6 +1,29 @@
 # Changelog
 
-## Unreleased
+## v0.1.1
+
+- First release carrying a SLSA build-provenance attestation: the repository is
+  now public, which enables the attestation feature, and `attest-build-provenance`
+  is updated to v4.1.1 (composite, node24 sub-actions) so the release no longer
+  rides the deprecated Node 20.
+
+## v0.1.0
+
+- Friendly first-run setup that the CLI and the extension share. `gusset setup`
+  prints a state-aware, step-by-step walkthrough; `gusset passphrase new`/`set`
+  store the shared secret to a 0600 file (no hand-made file, no manual chmod);
+  and the companion extension shows the same six steps in its popup and dashboard
+  when it isn't yet connected. `gusset init` defaults to passphrase-only (a
+  generated passphrase is strong enough), with `--with-salt` the opt-in for a
+  bring-your-own weak phrase. The README leads with a three-step quick start.
+- Self-distribution: the release ships a Mozilla-signed `.xpi` (a permanent
+  `releases/latest/download/gusset.xpi` install link) alongside prebuilt daemon
+  binaries for Linux, macOS, and Windows on both architectures.
+- Stale peers and beacons no longer linger: the daemon drops a device from the
+  peer list once it stops advertising (rather than keeping it "unreachable"
+  forever), and the extension prunes beacons older than 30 minutes from
+  `storage.sync`, so a finished or decommissioned device stops haunting the view
+  and the synced store.
 
 - Extension UI given a Firefox-native visual identity (Mozilla Acorn direction):
   the surface follows Firefox's own in-content palette via `light-dark()` tokens
