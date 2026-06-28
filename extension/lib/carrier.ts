@@ -56,7 +56,9 @@ export async function publishBeacon(
 // freshness when it opens each beacon; this is the storage-side cleanup that the
 // daemon, which cannot touch storage.sync, relies on the extension to do.) now is
 // injectable for tests.
-export async function readPeerBeacons(now: number = Date.now()): Promise<string[]> {
+export async function readPeerBeacons(
+  now: number = Date.now(),
+): Promise<string[]> {
   const id = await installId();
   const ownKey = BEACON_PREFIX + id;
   const all = await browser.storage.sync.get(null);
