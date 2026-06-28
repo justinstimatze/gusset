@@ -61,6 +61,25 @@ jobs:
           # install link works: releases/latest/download/gusset.xpi
           signed="$(ls -t .output/*.xpi | head -1)"
           cp "$signed" .output/gusset.xpi
+          # Publish the self-distribution update manifest so installed copies
+          # auto-update. Firefox polls update_url (releases/latest/download/
+          # updates.json) and pulls the newest signed .xpi. Listing only the
+          # current version is enough — any older client sees it as an upgrade.
+          version="$(node -p "require('./package.json').version")"
+          cat > .output/updates.json <<JSON
+          {
+            "addons": {
+              "gusset@justinstimatze.com": {
+                "updates": [
+                  {
+                    "version": "${version}",
+                    "update_link": "https://github.com/justinstimatze/gusset/releases/download/${GITHUB_REF_NAME}/gusset.xpi"
+                  }
+                ]
+              }
+            }
+          }
+          JSON
 
       - name: Release
         uses: goreleaser/goreleaser-action@5daf1e915a5f0af01ddbcd89a43b8061ff4f1a89 # v7.2.2

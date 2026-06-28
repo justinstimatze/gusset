@@ -21,6 +21,7 @@ irm https://raw.githubusercontent.com/justinstimatze/gusset/main/install.ps1 | i
 
 **2. Install the extension** — open this **in Firefox**:
 [**install the gusset extension →**](https://github.com/justinstimatze/gusset/releases/latest/download/gusset.xpi)
+Firefox keeps it updated automatically from future signed releases.
 
 **3. Run the guided setup** and follow along:
 

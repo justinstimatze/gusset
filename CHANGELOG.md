@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.1.3
+
+- Self-distribution auto-update: the extension manifest now carries an
+  `update_url`, and the release publishes an `updates.json` manifest as a release
+  asset (`releases/latest/download/updates.json`). Firefox polls it and updates
+  installed copies to the newest signed `.xpi` automatically — no more manual
+  re-download. (Takes effect from this version forward: install v0.1.3 once, then
+  future releases arrive on their own.)
+
 ## v0.1.2
 
 - Privacy: the device id broadcast over mDNS (and used as the shared-folder

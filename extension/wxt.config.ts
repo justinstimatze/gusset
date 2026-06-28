@@ -21,6 +21,12 @@ export default defineConfig({
         // accounts, no server. Declared explicitly per Firefox's data-consent
         // requirement for new extensions.
         data_collection_permissions: { required: ["none"] },
+        // Self-distribution auto-update: Firefox polls this manifest and updates
+        // to the newest signed .xpi. The release workflow publishes updates.json
+        // as a release asset, so `releases/latest/download/updates.json` always
+        // resolves to the newest version's manifest.
+        update_url:
+          "https://github.com/justinstimatze/gusset/releases/latest/download/updates.json",
       },
     },
     // The popup/background connect to the daemon's loopback WebSocket; everything

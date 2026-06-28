@@ -57,3 +57,6 @@ release:
   extra_files:
     - glob: extension/.output/*.xpi
     - glob: extension/.output/*-firefox.zip
+    # The self-distribution update manifest; `releases/latest/download/updates.json`
+    # is the extension's update_url, so installed copies auto-update.
+    - glob: extension/.output/updates.json
