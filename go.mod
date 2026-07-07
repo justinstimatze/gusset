@@ -13,7 +13,7 @@ require (
 	github.com/pion/transport/v4 v4.0.2
 	github.com/pion/turn/v4 v4.1.4
 	github.com/quic-go/quic-go v0.60.0
-	github.com/restic/chunker v0.4.0
+	github.com/restic/chunker v0.5.0
 	golang.org/x/crypto v0.53.0
 	golang.org/x/term v0.44.0
 	modernc.org/sqlite v1.53.0
