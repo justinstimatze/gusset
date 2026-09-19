@@ -36,7 +36,7 @@
     "tailwindcss": "^4.3.1",
     "typescript": "^6.0.3",
     "vitest": "^4.1.10",
-    "wxt": "^0.20.27"
+    "wxt": "^0.21.4"
   },
   "comments": {
     "overrides": "Forces patched versions of transitive deps flagged by Dependabot. All are dev-only (web-ext-run's Firefox dev runner) and never ship in the built extension; pinned here because upstream wxt/web-ext-run still resolve the vulnerable versions."
